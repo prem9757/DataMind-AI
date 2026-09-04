@@ -110,11 +110,11 @@ export const MyVisualizations: React.FC<MyVisualizationsProps> = ({
     if (!targetId) return;
 
     VisualizationEngine.addVisualizationToDashboard(targetId, targetVizForDashboard.id, 'half');
-    setDashboardAddedSuccess('Added to dashboard successfully!');
+    setDashboardAddedSuccess('Added to Dashboard & Executive Dashboard with automated summary!');
     setTimeout(() => {
       setTargetVizForDashboard(null);
       setDashboardAddedSuccess(null);
-    }, 1200);
+    }, 1500);
   };
 
   return (

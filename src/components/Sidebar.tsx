@@ -188,9 +188,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-500/20">
           <BrainCircuit className="w-5 h-5 text-slate-950" />
         </div>
-        <div className="flex flex-col">
-          <span className="font-bold text-base text-slate-100 tracking-tight">DataMind AI</span>
-          <span className="text-[10px] text-amber-400 uppercase tracking-widest font-semibold">Autonomous Analytics</span>
+        <div className="flex flex-col min-w-0">
+          <span className="font-bold text-xs text-slate-100 tracking-tight leading-snug">Smart Data Analysis Assistant</span>
+          <span className="text-[9px] text-amber-400 uppercase tracking-widest font-semibold mt-0.5">Autonomous Analytics</span>
         </div>
       </div>
 

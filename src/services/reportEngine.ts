@@ -19,7 +19,7 @@ export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   mode: 'executive',
   title: 'Executive Analytics & Business Intelligence Report',
   subtitle: 'Automated Exploratory Data Analysis & Strategic Insights Briefing',
-  author: 'Principal Data Analyst (DataMind AI)',
+  author: 'Principal Data Analyst (Smart Data Analysis Assistant)',
   organization: 'Enterprise Business Intelligence Group',
   date: new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }),
   datasetVersion: 'v1.0 (Cleaned)',
@@ -359,7 +359,7 @@ export function generateComprehensiveReport(
       unique: profiles[c]?.uniqueCount || 0,
       sample: String(profiles[c]?.sampleValues?.[0] ?? 'N/A')
     })),
-    reproduciblePythonCode: `# DataMind AI - Reproducible Analysis Script
+    reproduciblePythonCode: `# Smart Data Analysis Assistant - Reproducible Analysis Script
 import pandas as pd
 import numpy as np
 
@@ -517,7 +517,7 @@ export function exportComprehensiveExcelWorkbook(
     ['REPORT TITLE', report.title],
     ['DATASET NAME', report.datasetName],
     ['GENERATED AT', report.generatedAt],
-    ['AUTHOR', report.author || 'DataMind AI'],
+    ['AUTHOR', report.author || 'Smart Data Analysis Assistant'],
     ['QUALITY SCORE', `${dataset.quality.score}/100 (${dataset.quality.rating})`],
     ['TOTAL ROWS', dataset.workingRows.length],
     ['TOTAL COLUMNS', dataset.columns.length],
@@ -669,7 +669,7 @@ export function exportReportToHTML(report: ExecutiveReport, filename: string) {
   <div class="container">
     <div class="header">
       <div>
-        <span class="badge">DataMind AI Autonomous Briefing</span>
+        <span class="badge">Smart Data Analysis Assistant Autonomous Briefing</span>
         <h1>${report.title}</h1>
         <p>Dataset: <strong>${report.datasetName}</strong> (${report.datasetVersion || 'v1.0'}) • Compiled: ${report.generatedAt}</p>
       </div>
@@ -753,7 +753,7 @@ export function exportReportToHTML(report: ExecutiveReport, filename: string) {
     </ul>
 
     <div class="footer">
-      Generated automatically by DataMind AI Autonomous Analytics Engine • Confidential &amp; Proprietary
+      Generated automatically by Smart Data Analysis Assistant Engine • Confidential &amp; Proprietary
     </div>
   </div>
 </body>

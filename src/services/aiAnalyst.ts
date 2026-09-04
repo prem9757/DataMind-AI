@@ -5,7 +5,8 @@ import {
   ColumnProfile,
   QueryIntentType,
   StructuredAnalysisPlan,
-  DatasetState
+  DatasetState,
+  MindKnowledgeInsight
 } from '../types/dataset';
 import { computeCorrelationMatrix, computeGroupSummary, computeTimeSeriesTrend } from './edaEngine';
 import { runTwoSampleTTest } from './statsEngine';
@@ -90,7 +91,50 @@ export async function askDataAnalyst(
   // 8. Python/Pandas Code Generation
   const pythonCode = generatePythonCode(plan, mapping);
 
-  // 9. Synthesize Final Structured Output
+  // 9. Mind Knowledge (Proactive Dimensional Inference & Multi-Perspective Reasoning)
+  const catCols = columns.filter(c => profiles[c]?.type === 'categorical' || profiles[c]?.type === 'boolean');
+  const numCols = columns.filter(c => profiles[c]?.type === 'numeric');
+
+  // Discover top categorical dimensions for proactive expansion (Region, Category, Segment, etc.)
+  const inferredDim1 = catCols.find(c => /region|territory|country|state|zone|city|market/i.test(c)) || catCols[0] || 'Region';
+  const inferredDim2 = catCols.find(c => c !== inferredDim1 && /category|dept|type|segment|product/i.test(c)) || catCols[1] || 'Category';
+
+  const m1 = plan.metricColumn || numCols[0] || 'Sales';
+  const m2 = plan.secondaryMetricColumn || (numCols.find(c => c !== m1) || 'Profit');
+
+  let mindKnowledge: MindKnowledgeInsight;
+
+  if (plan.intent === 'SCATTER' || mapping.isBivariateMetricQuery) {
+    mindKnowledge = {
+      inferredDimensions: [inferredDim1, inferredDim2].filter(Boolean),
+      suggestedCharts: [
+        { type: 'scatter', label: `Scatter (${m1} vs ${m2})`, prompt: `Show scatter plot of ${m1} vs ${m2}` },
+        { type: 'bar', label: `Bar (${m1} by ${inferredDim1})`, prompt: `Show ${m1} by ${inferredDim1}` },
+        { type: 'donut', label: `Donut (${m1} Share by ${inferredDim1})`, prompt: `Show ${m1} share by ${inferredDim1}` },
+        { type: 'box', label: `Box Plot (${m2} across ${inferredDim1})`, prompt: `Show box plot of ${m2} across ${inferredDim1}` },
+        { type: 'horizontal_bar', label: `Horizontal (${m2} by ${inferredDim2})`, prompt: `Show ${m2} by ${inferredDim2}` },
+        { type: 'line', label: `Line Trend (${m1} over Time)`, prompt: `Show trend of ${m1} over time` }
+      ],
+      deepInsight: `Mind Knowledge detected a bivariate comparison between **${m1}** and **${m2}**. While a scatter plot isolates linear regression and outlier transactions, examining these metrics sliced across **${inferredDim1}** and **${inferredDim2}** is essential to identify which territories generate high revenue with razor-thin margins versus regions delivering outsized profit.`,
+      actionPrompt: `Show ${m1} by ${inferredDim1}`
+    };
+  } else {
+    mindKnowledge = {
+      inferredDimensions: [inferredDim1, inferredDim2].filter(Boolean),
+      suggestedCharts: [
+        { type: 'bar', label: `Bar (${m1} by ${inferredDim1})`, prompt: `Show ${m1} by ${inferredDim1}` },
+        { type: 'donut', label: `Donut (${m1} Share by ${inferredDim1})`, prompt: `Show ${m1} share by ${inferredDim1}` },
+        { type: 'line', label: `Line Trend (${m1} over Time)`, prompt: `Show trend of ${m1} over time` },
+        { type: 'scatter', label: `Scatter (${m1} vs ${m2})`, prompt: `Show scatter plot of ${m1} vs ${m2}` },
+        { type: 'box', label: `Box Plot (${m1} across ${inferredDim1})`, prompt: `Show box plot of ${m1} across ${inferredDim1}` },
+        { type: 'histogram', label: `Histogram (${m1} Distribution)`, prompt: `Show histogram of ${m1}` }
+      ],
+      deepInsight: `Mind Knowledge expanded this query with complementary dimension **${inferredDim1}** and secondary metric **${m2}**. Multi-perspective charting (distribution, territorial share, and bivariate scatter) reveals operational drivers beyond a single metric view.`,
+      actionPrompt: `Show ${m1} by ${inferredDim1}`
+    };
+  }
+
+  // 10. Synthesize Final Structured Output
   const executionTimeMs = Date.now() - startTime;
 
   if (geminiEnhanced && validated.isValid) {
@@ -109,6 +153,7 @@ export async function askDataAnalyst(
       plan: plan,
       intent: intent,
       suggestedFollowUps: geminiEnhanced.suggestedFollowUps || deterministicResult.suggestedFollowUps,
+      mindKnowledge,
       executionTimeMs
     };
   }
@@ -128,6 +173,7 @@ export async function askDataAnalyst(
     plan: plan,
     intent: intent,
     suggestedFollowUps: deterministicResult.suggestedFollowUps,
+    mindKnowledge,
     executionTimeMs
   };
 }
@@ -147,6 +193,9 @@ function tokenizeQuery(query: string): string[] {
 function detectQueryIntent(query: string, tokens: string[]): QueryIntentType {
   const q = query.toLowerCase();
 
+  if (q.includes('scatter') || q.includes('bivariate') || q.includes('dispersion') || q.includes('scatterplot')) {
+    return 'SCATTER';
+  }
   if (q.includes('report') || q.includes('executive brief') || q.includes('export to excel') || q.includes('pdf export') || q.includes('management summary')) {
     return 'REPORT';
   }
@@ -200,10 +249,13 @@ function detectQueryIntent(query: string, tokens: string[]): QueryIntentType {
 interface ColumnMappingResult {
   metricColumn: string;
   dimensionColumn: string;
+  secondaryMetricColumn?: string;
   dateColumn?: string;
   filterColumn?: string;
   filterValue?: string;
   comparisonItems?: [string, string];
+  requestedChartType?: ChartType;
+  isBivariateMetricQuery?: boolean;
 }
 
 const SYNONYM_MAP: Record<string, string[]> = {
@@ -231,6 +283,28 @@ function mapColumnsFromQuery(
   const catCols = columns.filter(c => profiles[c]?.type === 'categorical' || profiles[c]?.type === 'boolean');
   const dateCols = columns.filter(c => profiles[c]?.type === 'datetime');
 
+  // Explicit chart type requests
+  let requestedChartType: ChartType | undefined;
+  if (/\b(scatter|dispersion|bivariate)\b/i.test(q)) {
+    requestedChartType = 'scatter';
+  } else if (/\b(donut)\b/i.test(q)) {
+    requestedChartType = 'donut';
+  } else if (/\b(pie|pie chart|piechart)\b/i.test(q)) {
+    requestedChartType = 'pie';
+  } else if (/\b(horizontal bar|horizontal)\b/i.test(q)) {
+    requestedChartType = 'horizontal_bar';
+  } else if (/\b(area|area chart)\b/i.test(q)) {
+    requestedChartType = 'area';
+  } else if (/\b(box plot|boxplot|box-plot|whisker)\b/i.test(q)) {
+    requestedChartType = 'box';
+  } else if (/\b(histogram|distribution plot)\b/i.test(q)) {
+    requestedChartType = 'histogram';
+  } else if (/\b(line|line chart|trendline)\b/i.test(q)) {
+    requestedChartType = 'line';
+  } else if (/\b(bar|bar chart|column chart)\b/i.test(q)) {
+    requestedChartType = 'bar';
+  }
+
   // Check conversational pronoun context ("its trend", "that region", etc.)
   let contextCategory = '';
   if (conversationHistory.length > 0) {
@@ -248,36 +322,77 @@ function mapColumnsFromQuery(
     }
   }
 
-  // 1. Find Metric Column
-  let matchedMetric = numCols.find(col => q.includes(col.toLowerCase()));
-  if (!matchedMetric) {
-    for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
-      if (q.includes(key)) {
-        matchedMetric = numCols.find(col =>
-          synonyms.some(syn => col.toLowerCase().includes(syn) || syn.includes(col.toLowerCase()))
-        );
-        if (matchedMetric) break;
+  // 1. Find all matching Numeric Columns
+  const matchedNumCols: string[] = [];
+  for (const col of numCols) {
+    const clean = col.toLowerCase().replace(/_/g, ' ');
+    if (q.includes(clean) || q.includes(col.toLowerCase())) {
+      if (!matchedNumCols.includes(col)) matchedNumCols.push(col);
+    }
+  }
+  for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
+    if (q.includes(key)) {
+      const found = numCols.find(col =>
+        synonyms.some(syn => col.toLowerCase().includes(syn) || syn.includes(col.toLowerCase()))
+      );
+      if (found && !matchedNumCols.includes(found)) {
+        matchedNumCols.push(found);
       }
     }
   }
+
+  // Sort by order of appearance in query
+  matchedNumCols.sort((a, b) => {
+    const posA = q.indexOf(a.toLowerCase());
+    const posB = q.indexOf(b.toLowerCase());
+    return (posA === -1 ? 999 : posA) - (posB === -1 ? 999 : posB);
+  });
+
+  let matchedMetric = matchedNumCols[0];
   if (!matchedMetric) {
     matchedMetric = numCols.find(c => /sales|revenue|profit|amount|total|price|salary|mrr/i.test(c)) || numCols[0] || '';
   }
 
-  // 2. Find Dimension Column
-  let matchedDimension = catCols.find(col => q.includes(col.toLowerCase()));
-  if (!matchedDimension) {
-    for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
-      if (q.includes(key)) {
-        matchedDimension = catCols.find(col =>
-          synonyms.some(syn => col.toLowerCase().includes(syn) || syn.includes(col.toLowerCase()))
-        );
-        if (matchedDimension) break;
+  // 2. Find all matching Categorical Columns
+  const matchedCatCols: string[] = [];
+  for (const col of catCols) {
+    const clean = col.toLowerCase().replace(/_/g, ' ');
+    if (q.includes(clean) || q.includes(col.toLowerCase())) {
+      if (!matchedCatCols.includes(col)) matchedCatCols.push(col);
+    }
+  }
+  for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
+    if (q.includes(key)) {
+      const found = catCols.find(col =>
+        synonyms.some(syn => col.toLowerCase().includes(syn) || syn.includes(col.toLowerCase()))
+      );
+      if (found && !matchedCatCols.includes(found)) {
+        matchedCatCols.push(found);
       }
     }
   }
-  if (!matchedDimension) {
-    matchedDimension = catCols.find(c => /region|category|segment|product|state|city|status/i.test(c)) || catCols[0] || '';
+
+  let isBivariate = false;
+  let secondaryMetric: string | undefined;
+  let matchedDimension = '';
+
+  // Critical Mind Knowledge Logic:
+  // If user says "sales by profit" (two numeric metrics mentioned, NO categorical dimension explicitly named):
+  // It is a bivariate comparison / scatter inquiry! Do not falsely assume Region or Category as primary dimension.
+  if (matchedNumCols.length >= 2 && matchedCatCols.length === 0) {
+    isBivariate = true;
+    matchedMetric = matchedNumCols[0];
+    secondaryMetric = matchedNumCols[1];
+    matchedDimension = ''; // Deliberately empty so it triggers SCATTER bivariate flow
+    requestedChartType = requestedChartType || 'scatter';
+  } else if (matchedNumCols.length >= 2 && matchedCatCols.length > 0) {
+    isBivariate = true;
+    matchedMetric = matchedNumCols[0];
+    secondaryMetric = matchedNumCols[1];
+    matchedDimension = matchedCatCols[0];
+    requestedChartType = requestedChartType || 'scatter';
+  } else {
+    matchedDimension = matchedCatCols[0] || catCols.find(c => /region|category|segment|product|state|city|status/i.test(c)) || catCols[0] || '';
   }
 
   // 3. Find Date Column
@@ -300,10 +415,13 @@ function mapColumnsFromQuery(
 
   return {
     metricColumn: matchedMetric,
+    secondaryMetricColumn: secondaryMetric,
     dimensionColumn: matchedDimension,
     dateColumn: matchedDate,
     filterColumn: filterCol || (contextCategory ? matchedDimension : undefined),
-    filterValue: filterVal || contextCategory || undefined
+    filterValue: filterVal || contextCategory || undefined,
+    requestedChartType,
+    isBivariateMetricQuery: isBivariate
   };
 }
 
@@ -320,95 +438,120 @@ function createAnalysisPlan(
 ): StructuredAnalysisPlan {
   const q = query.toLowerCase();
 
-  switch (intent) {
+  // If query is bivariate metric inquiry without dimension, force SCATTER
+  const effectiveIntent = mapping.isBivariateMetricQuery ? 'SCATTER' : intent;
+
+  let plan: StructuredAnalysisPlan;
+
+  switch (effectiveIntent) {
+    case 'SCATTER': {
+      plan = {
+        intent: 'SCATTER',
+        primaryDimension: mapping.dimensionColumn,
+        metricColumn: mapping.metricColumn,
+        secondaryMetricColumn: mapping.secondaryMetricColumn,
+        aggregation: 'SCATTER',
+        visualizationType: 'scatter',
+        reasoning: `Executing bivariate dispersion and regression analysis between ${mapping.secondaryMetricColumn || 'X'} and ${mapping.metricColumn || 'Y'}.`
+      };
+      break;
+    }
     case 'RANKING': {
       const isLowest = q.includes('lowest') || q.includes('worst') || q.includes('bottom');
       const limitMatch = query.match(/\b(\d+)\b/);
       const limit = limitMatch ? parseInt(limitMatch[1], 10) : 7;
-      return {
-        intent,
+      plan = {
+        intent: 'RANKING',
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'SUM',
         sortBy: isLowest ? 'ASCENDING' : 'DESCENDING',
         limit: Math.min(limit, 20),
-        visualizationType: 'horizontal_bar',
+        visualizationType: mapping.requestedChartType || 'horizontal_bar',
         reasoning: `Ranking ${mapping.dimensionColumn} by total ${mapping.metricColumn} in ${isLowest ? 'ascending' : 'descending'} order to identify key volume contributors.`
       };
+      break;
     }
     case 'TREND': {
-      return {
-        intent,
+      plan = {
+        intent: 'TREND',
         primaryDimension: mapping.dateColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'SUM',
-        visualizationType: 'line',
+        visualizationType: mapping.requestedChartType || 'line',
         reasoning: `Aggregating ${mapping.metricColumn} grouped by temporal periods in ${mapping.dateColumn} to compute trajectory and moving average growth.`
       };
+      break;
     }
     case 'CORRELATION': {
-      return {
-        intent,
+      plan = {
+        intent: 'CORRELATION',
         metricColumn: mapping.metricColumn,
         aggregation: 'CORRELATION',
-        visualizationType: 'bar',
+        visualizationType: mapping.requestedChartType || 'bar',
         reasoning: `Computing Pearson correlation coefficients between target variable ${mapping.metricColumn} and other numeric attributes.`
       };
+      break;
     }
     case 'ANOMALY': {
-      return {
-        intent,
+      plan = {
+        intent: 'ANOMALY',
         metricColumn: mapping.metricColumn,
         aggregation: 'IQR',
-        visualizationType: 'histogram',
+        visualizationType: mapping.requestedChartType || 'histogram',
         reasoning: `Applying Tukey's Interquartile Range (IQR 1.5x) boundary filtering on ${mapping.metricColumn} to isolate extreme outlier records.`
       };
+      break;
     }
     case 'DISTRIBUTION': {
-      return {
-        intent,
+      plan = {
+        intent: 'DISTRIBUTION',
         metricColumn: mapping.metricColumn,
         aggregation: 'DISTRIBUTION',
-        visualizationType: 'histogram',
+        visualizationType: mapping.requestedChartType || 'histogram',
         reasoning: `Dividing ${mapping.metricColumn} into statistical frequency bins to evaluate skewness, spread, and modal clusters.`
       };
+      break;
     }
     case 'COMPARISON': {
-      return {
-        intent,
+      plan = {
+        intent: 'COMPARISON',
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'DIFFERENCE',
-        visualizationType: 'bar',
+        visualizationType: mapping.requestedChartType || 'bar',
         reasoning: `Comparing group aggregates of ${mapping.metricColumn} across distinct segments of ${mapping.dimensionColumn}.`
       };
+      break;
     }
     case 'STATISTICAL': {
-      return {
-        intent,
+      plan = {
+        intent: 'STATISTICAL',
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'MEAN',
-        visualizationType: 'bar',
+        visualizationType: mapping.requestedChartType || 'bar',
         reasoning: `Executing Welch's two-sample hypothesis test on ${mapping.metricColumn} to determine if differences between groups are statistically significant.`
       };
+      break;
     }
     case 'AGGREGATION':
     case 'CALCULATION': {
       const isAverage = q.includes('average') || q.includes('mean') || q.includes('aov');
       const isMedian = q.includes('median');
-      return {
-        intent,
+      plan = {
+        intent: effectiveIntent,
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: isAverage ? 'MEAN' : isMedian ? 'MEDIAN' : 'SUM',
-        visualizationType: mapping.dimensionColumn ? 'bar' : 'none',
+        visualizationType: mapping.requestedChartType || (mapping.dimensionColumn ? 'bar' : 'none'),
         reasoning: `Calculating aggregate ${isAverage ? 'mean' : isMedian ? 'median' : 'sum'} for metric ${mapping.metricColumn}.`
       };
+      break;
     }
     case 'FILTER': {
-      return {
-        intent,
+      plan = {
+        intent: 'FILTER',
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'SUM',
@@ -417,23 +560,31 @@ function createAnalysisPlan(
           operator: 'eq',
           value: mapping.filterValue
         } : undefined,
-        visualizationType: 'bar',
+        visualizationType: mapping.requestedChartType || 'bar',
         reasoning: `Filtering dataset on ${mapping.filterColumn} = "${mapping.filterValue}" and aggregating metric ${mapping.metricColumn}.`
       };
+      break;
     }
     case 'DESCRIPTIVE':
     case 'GENERAL_DATASET':
     default: {
-      return {
-        intent: intent || 'GENERAL_DATASET',
+      plan = {
+        intent: effectiveIntent || 'GENERAL_DATASET',
         primaryDimension: mapping.dimensionColumn,
         metricColumn: mapping.metricColumn,
         aggregation: 'SUM',
-        visualizationType: mapping.dimensionColumn && mapping.metricColumn ? 'bar' : 'none',
+        visualizationType: mapping.requestedChartType || (mapping.dimensionColumn && mapping.metricColumn ? 'bar' : 'none'),
         reasoning: `Generating holistic descriptive summary across categorical and numerical distributions.`
       };
+      break;
     }
   }
+
+  if (mapping.requestedChartType) {
+    plan.visualizationType = mapping.requestedChartType;
+  }
+
+  return plan;
 }
 
 /* ========================================================================== */
@@ -450,6 +601,321 @@ interface ExecutionResult {
   suggestedFollowUps: string[];
 }
 
+function computeScatterAnalysis(
+  rows: Record<string, any>[],
+  xCol: string,
+  yCol: string,
+  dimCol?: string
+): ExecutionResult {
+  const validRows = rows.filter(r => {
+    const x = Number(r[xCol]);
+    const y = Number(r[yCol]);
+    return !isNaN(x) && isFinite(x) && !isNaN(y) && isFinite(y);
+  });
+
+  if (validRows.length < 2) {
+    return {
+      directAnswer: `Insufficient numeric observations in ${xCol} and ${yCol} to construct a scatter plot.`,
+      supportingMetrics: [],
+      explanation: 'Both columns must contain valid finite numbers.',
+      businessImplication: '',
+      suggestedFollowUps: []
+    };
+  }
+
+  const xVals = validRows.map(r => Number(r[xCol]));
+  const yVals = validRows.map(r => Number(r[yCol]));
+
+  // Pearson r
+  let r = 0;
+  try {
+    r = ss.sampleCorrelation(xVals, yVals);
+    if (isNaN(r)) r = 0;
+  } catch {
+    r = 0;
+  }
+  const rSquared = Math.round(r * r * 1000) / 1000;
+
+  // Linear regression: y = slope * x + intercept
+  let slope = 0;
+  let intercept = 0;
+  try {
+    const regPoints = xVals.map((x, i) => [x, yVals[i]] as [number, number]);
+    const regLine = ss.linearRegression(regPoints);
+    slope = Math.round(regLine.m * 1000) / 1000;
+    intercept = Math.round(regLine.b * 100) / 100;
+  } catch {
+    slope = 0;
+    intercept = 0;
+  }
+
+  // Downsample to max 120 points for fluid chart rendering
+  const step = Math.max(1, Math.floor(validRows.length / 120));
+  const sampledRows = validRows.filter((_, i) => i % step === 0);
+
+  const scatterData = sampledRows.map((r, idx) => {
+    const x = Number(r[xCol]);
+    const y = Number(r[yCol]);
+    const label = dimCol && r[dimCol] ? String(r[dimCol]) : `Record #${idx + 1}`;
+    return {
+      x,
+      y,
+      [xCol]: x,
+      [yCol]: y,
+      name: label,
+      label
+    };
+  });
+
+  // Calculate opposing outliers (e.g. high sales but negative profit)
+  const lossMakingCount = validRows.filter(r => {
+    const x = Number(r[xCol]);
+    const y = Number(r[yCol]);
+    return (x > 0 && y < 0) || (y > 0 && x < 0);
+  }).length;
+
+  const relationshipStrength = Math.abs(r) >= 0.7 ? 'strong' : Math.abs(r) >= 0.4 ? 'moderate' : 'weak';
+  const relationshipDirection = r >= 0 ? 'positive' : 'negative';
+
+  const directAnswer = `Bivariate scatter plot between **${yCol}** and **${xCol}** across **${validRows.length.toLocaleString()} records** exhibits a **${relationshipStrength} ${relationshipDirection} correlation (Pearson r = ${r >= 0 ? '+' : ''}${r.toFixed(3)}, R² = ${rSquared})**. The linear regression trend follows **${yCol} = ${slope} × ${xCol} ${intercept >= 0 ? '+' : '-'} ${Math.abs(intercept)}**. ${lossMakingCount > 0 ? `Identified **${lossMakingCount} inverse/loss outlier transactions** requiring operational margin audit.` : ''}`;
+
+  const chartData = {
+    type: 'scatter' as ChartType,
+    title: `${yCol} vs. ${xCol} Scatter Analysis`,
+    xAxisLabel: xCol,
+    yAxisLabel: yCol,
+    data: scatterData,
+    keys: [yCol]
+  };
+
+  const tableData = {
+    headers: ['Sample ID / Entity', xCol, yCol, 'Regression Predicted Y', 'Residual Variance'],
+    rows: sampledRows.slice(0, 10).map((r, idx) => {
+      const x = Number(r[xCol]);
+      const y = Number(r[yCol]);
+      const predY = Math.round((slope * x + intercept) * 100) / 100;
+      const residual = Math.round((y - predY) * 100) / 100;
+      return [
+        dimCol && r[dimCol] ? String(r[dimCol]) : `#${idx + 1}`,
+        x.toLocaleString(),
+        y.toLocaleString(),
+        predY.toLocaleString(),
+        residual >= 0 ? `+${residual.toLocaleString()}` : residual.toLocaleString()
+      ];
+    })
+  };
+
+  return {
+    directAnswer,
+    supportingMetrics: [
+      { label: 'Pearson Correlation (r)', value: `${r >= 0 ? '+' : ''}${r.toFixed(3)}` },
+      { label: 'Variance Explained (R²)', value: `${(rSquared * 100).toFixed(1)}%` },
+      { label: 'Trend Slope (m)', value: slope.toString() },
+      { label: 'Opposing Outliers', value: lossMakingCount.toString() }
+    ],
+    chartData,
+    tableData,
+    explanation: `Fitted ordinary least squares (OLS) linear regression on \`${xCol}\` and \`${yCol}\`. Quantified bivariate dispersion, goodness of fit (R²), and extreme residual anomalies.`,
+    businessImplication: `Use the regression equation to set target ${yCol} benchmarks for given ${xCol} volumes. Investigate the ${lossMakingCount} opposing outliers to eliminate profit leakage.`,
+    suggestedFollowUps: [
+      dimCol ? `Show ${yCol} by ${dimCol}` : `Show ${yCol} by Region`,
+      dimCol ? `Show ${xCol} by ${dimCol}` : `Show ${xCol} by Category`,
+      `Show box plot of ${yCol}`,
+      `Show outliers in ${xCol}`
+    ]
+  };
+}
+
+function computeBoxPlotAnalysis(
+  rows: Record<string, any>[],
+  metric: string,
+  dimension?: string
+): ExecutionResult {
+  const valid = rows.filter(r => !isNaN(Number(r[metric])) && isFinite(Number(r[metric])));
+  if (valid.length < 4) {
+    return {
+      directAnswer: `Insufficient data in ${metric} to build a box plot distribution.`,
+      supportingMetrics: [],
+      explanation: 'Box plots require at least 4 numeric points.',
+      businessImplication: '',
+      suggestedFollowUps: []
+    };
+  }
+
+  const groups: Record<string, number[]> = {};
+  if (dimension) {
+    for (const r of valid) {
+      const g = String(r[dimension] || 'Other');
+      if (!groups[g]) groups[g] = [];
+      groups[g].push(Number(r[metric]));
+    }
+  } else {
+    groups['Overall'] = valid.map(r => Number(r[metric]));
+  }
+
+  const boxData = Object.entries(groups)
+    .filter(([_, vals]) => vals.length >= 2)
+    .map(([cat, vals]) => {
+      vals.sort((a, b) => a - b);
+      const min = ss.min(vals);
+      const max = ss.max(vals);
+      const q1 = ss.quantile(vals, 0.25);
+      const median = ss.median(vals);
+      const q3 = ss.quantile(vals, 0.75);
+      const iqr = q3 - q1;
+      return {
+        category: cat,
+        name: cat,
+        min,
+        q1,
+        median,
+        q3,
+        max,
+        iqr,
+        count: vals.length
+      };
+    })
+    .sort((a, b) => b.median - a.median)
+    .slice(0, 8);
+
+  const topGroup = boxData[0];
+  const directAnswer = `Box plot distribution analysis for **${metric}** ${dimension ? `across **${boxData.length} ${dimension} groups**` : 'across dataset'}: **${topGroup.category}** has a median of **${topGroup.median.toLocaleString()}** (IQR: ${topGroup.iqr.toLocaleString()}, 25th percentile: ${topGroup.q1.toLocaleString()}, 75th percentile: ${topGroup.q3.toLocaleString()}).`;
+
+  return {
+    directAnswer,
+    supportingMetrics: [
+      { label: `Top Group Median`, value: topGroup.median.toLocaleString() },
+      { label: `Interquartile Range (IQR)`, value: topGroup.iqr.toLocaleString() },
+      { label: `Group Min Value`, value: topGroup.min.toLocaleString() },
+      { label: `Group Max Value`, value: topGroup.max.toLocaleString() }
+    ],
+    chartData: {
+      type: 'box' as ChartType,
+      title: `${metric} Box Plot Distribution`,
+      xAxisLabel: dimension || 'Group',
+      yAxisLabel: metric,
+      data: boxData,
+      keys: ['median']
+    },
+    tableData: {
+      headers: [dimension || 'Group', 'Min', 'Q1 (25%)', 'Median (50%)', 'Q3 (75%)', 'Max', 'IQR', 'Count'],
+      rows: boxData.map(b => [
+        b.category,
+        b.min.toLocaleString(),
+        b.q1.toLocaleString(),
+        b.median.toLocaleString(),
+        b.q3.toLocaleString(),
+        b.max.toLocaleString(),
+        b.iqr.toLocaleString(),
+        b.count.toLocaleString()
+      ])
+    },
+    explanation: `Constructed Tukey five-number summaries (min, Q1, median, Q3, max) and IQR boundaries across subgroups to identify skewness and dispersion.`,
+    businessImplication: `Compare quartile spreads to determine whether volatility in ${metric} is concentrated within specific tiers.`,
+    suggestedFollowUps: [
+      `Show outliers in ${metric}`,
+      `Show histogram of ${metric}`,
+      `Show ${metric} by ${dimension || 'Category'}`
+    ]
+  };
+}
+
+function computeHistogramAnalysis(
+  rows: Record<string, any>[],
+  metric: string
+): ExecutionResult {
+  const vals = rows.map(r => Number(r[metric])).filter(v => !isNaN(v) && isFinite(v));
+  if (vals.length < 2) {
+    return {
+      directAnswer: `Insufficient numeric data in ${metric} to build frequency histogram.`,
+      supportingMetrics: [],
+      explanation: 'Requires valid numeric column.',
+      businessImplication: '',
+      suggestedFollowUps: []
+    };
+  }
+
+  vals.sort((a, b) => a - b);
+  const min = ss.min(vals);
+  const max = ss.max(vals);
+  const binCount = Math.min(12, Math.max(5, Math.round(Math.sqrt(vals.length))));
+  const binWidth = (max - min) / binCount || 1;
+
+  const bins: { binRange: string; count: number; minVal: number; maxVal: number }[] = [];
+  for (let i = 0; i < binCount; i++) {
+    const bStart = min + i * binWidth;
+    const bEnd = i === binCount - 1 ? max : min + (i + 1) * binWidth;
+    bins.push({
+      binRange: `${Math.round(bStart).toLocaleString()} - ${Math.round(bEnd).toLocaleString()}`,
+      count: 0,
+      minVal: bStart,
+      maxVal: bEnd
+    });
+  }
+
+  for (const v of vals) {
+    let placed = false;
+    for (let i = 0; i < bins.length; i++) {
+      if (v >= bins[i].minVal && (i === bins.length - 1 ? v <= bins[i].maxVal : v < bins[i].maxVal)) {
+        bins[i].count++;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) bins[bins.length - 1].count++;
+  }
+
+  const modalBin = [...bins].sort((a, b) => b.count - a.count)[0];
+  const mean = ss.mean(vals);
+  const median = ss.median(vals);
+  let skewness = 0;
+  try {
+    skewness = Math.round(ss.sampleSkewness(vals) * 100) / 100;
+  } catch {
+    skewness = 0;
+  }
+
+  const directAnswer = `Frequency histogram for **${metric}** across **${vals.length.toLocaleString()} values**: Modal concentration lies between **${modalBin.binRange}** with **${modalBin.count.toLocaleString()} occurrences** (${Math.round((modalBin.count / vals.length) * 100)}% of total). Distribution exhibits a skewness of **${skewness}** with mean **${Math.round(mean).toLocaleString()}** vs median **${Math.round(median).toLocaleString()}**.`;
+
+  return {
+    directAnswer,
+    supportingMetrics: [
+      { label: 'Modal Range', value: modalBin.binRange },
+      { label: 'Modal Count', value: modalBin.count.toLocaleString() },
+      { label: 'Distribution Skewness', value: skewness.toString() },
+      { label: 'Sample Mean', value: Math.round(mean).toLocaleString() }
+    ],
+    chartData: {
+      type: 'histogram' as ChartType,
+      title: `${metric} Frequency Distribution`,
+      xAxisLabel: `${metric} Bins`,
+      yAxisLabel: 'Frequency (Count)',
+      data: bins.map(b => ({
+        binRange: b.binRange,
+        count: b.count,
+        name: b.binRange,
+        value: b.count
+      })),
+      keys: ['count']
+    },
+    tableData: {
+      headers: ['Bin Interval', 'Frequency Count', 'Proportion %'],
+      rows: bins.map(b => [
+        b.binRange,
+        b.count.toLocaleString(),
+        `${Math.round((b.count / vals.length) * 1000) / 10}%`
+      ])
+    },
+    explanation: `Binned numeric values into ${binCount} uniform intervals and calculated modal frequencies, central tendencies, and Pearson skewness coefficient.`,
+    businessImplication: `Identifies standard operating thresholds and tail frequencies to configure realistic forecasting bounds and alerts.`,
+    suggestedFollowUps: [
+      `Show outliers in ${metric}`,
+      `Show box plot of ${metric}`,
+      `Show average ${metric}`
+    ]
+  };
+}
+
 function executeAnalysisPlan(
   plan: StructuredAnalysisPlan,
   rows: Record<string, any>[],
@@ -464,6 +930,25 @@ function executeAnalysisPlan(
   if (plan.filterCondition) {
     const { column, value } = plan.filterCondition;
     workingData = rows.filter(r => String(r[column]).toLowerCase() === String(value).toLowerCase());
+  }
+
+  // 0. BIVARIATE SCATTER & REGRESSION ANALYSIS
+  if (plan.intent === 'SCATTER' || plan.secondaryMetricColumn || plan.visualizationType === 'scatter') {
+    const yCol = plan.metricColumn || numCols[0] || 'Sales';
+    const xCol = plan.secondaryMetricColumn || (numCols.find(c => c !== yCol) || numCols[1] || 'Profit');
+    return computeScatterAnalysis(workingData, xCol, yCol, plan.primaryDimension);
+  }
+
+  // 0.5 BOX PLOT DISTRIBUTION ANALYSIS
+  if (plan.visualizationType === 'box') {
+    const metric = plan.metricColumn || numCols[0] || 'Sales';
+    return computeBoxPlotAnalysis(workingData, metric, plan.primaryDimension);
+  }
+
+  // 0.6 HISTOGRAM FREQUENCY ANALYSIS
+  if (plan.visualizationType === 'histogram' && plan.intent !== 'ANOMALY') {
+    const metric = plan.metricColumn || numCols[0] || 'Sales';
+    return computeHistogramAnalysis(workingData, metric);
   }
 
   // 1. RANKING & GROUPBY AGGREGATIONS
@@ -483,14 +968,19 @@ function executeAnalysisPlan(
         const share = totalSum > 0 ? Math.round((top1.sum / totalSum) * 1000) / 10 : 0;
         const displayList = summaries.slice(0, plan.limit || 7);
 
+        const isDonutOrPie = plan.visualizationType === 'donut' || plan.visualizationType === 'pie';
+        const chartType = (plan.visualizationType || 'bar') as ChartType;
+
         const chartData = {
-          type: plan.visualizationType || 'bar',
-          title: `${metric} Breakdown by ${dim}`,
+          type: chartType,
+          title: isDonutOrPie ? `${metric} Share by ${dim}` : `${metric} Breakdown by ${dim}`,
           xAxisLabel: dim,
           yAxisLabel: `Total ${metric}`,
           data: displayList.map(s => ({
             [dim]: s.category,
             [metric]: s.sum,
+            name: s.category,
+            value: s.sum,
             Average: s.mean
           })),
           keys: [metric]
@@ -912,7 +1402,7 @@ function generatePythonCode(
 
   switch (plan.intent) {
     case 'RANKING':
-      return `# DataMind AI - Generated Python/Pandas Ranking Analysis
+      return `# Smart Data Analysis Assistant - Generated Python/Pandas Ranking Analysis
 import pandas as pd
 import numpy as np
 
@@ -935,7 +1425,7 @@ print(result)
 `;
 
     case 'TREND':
-      return `# DataMind AI - Generated Time-Series Trend Analysis
+      return `# Smart Data Analysis Assistant - Generated Time-Series Trend Analysis
 import pandas as pd
 
 df = working_dataset.copy()
@@ -951,7 +1441,7 @@ print(monthly_trend)
 `;
 
     case 'CORRELATION':
-      return `# DataMind AI - Generated Pearson Correlation Matrix
+      return `# Smart Data Analysis Assistant - Generated Pearson Correlation Matrix
 import pandas as pd
 
 df = working_dataset.copy()
@@ -966,7 +1456,7 @@ print(target_corr)
 `;
 
     case 'ANOMALY':
-      return `# DataMind AI - Tukey IQR 1.5x Outlier Detection
+      return `# Smart Data Analysis Assistant - Tukey IQR 1.5x Outlier Detection
 import pandas as pd
 import numpy as np
 
@@ -984,7 +1474,7 @@ print(outliers[['${dim}', '${metric}']].head(10))
 `;
 
     case 'PREDICTION':
-      return `# DataMind AI - Scikit-Learn Predictive Model (Random Forest)
+      return `# Smart Data Analysis Assistant - Scikit-Learn Predictive Model (Random Forest)
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestRegressor
@@ -1010,9 +1500,31 @@ print(f"R2 Validation Score: {r2_score(y_test, preds):.4f}")
 print(f"RMSE: {mean_squared_error(y_test, preds, squared=False):.4f}")
 `;
 
+    case 'SCATTER': {
+      const secMetric = plan.secondaryMetricColumn || 'Profit';
+      return `# Smart Data Analysis Assistant - Bivariate Scatter & Linear Regression
+import pandas as pd
+import numpy as np
+from scipy import stats
+
+df = working_dataset.copy()
+valid = df[['${secMetric}', '${metric}']].dropna()
+
+# Compute Pearson correlation and ordinary least squares (OLS) linear regression
+x = valid['${secMetric}']
+y = valid['${metric}']
+slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
+
+print(f"Pearson Correlation (r): {r_value:.4f}")
+print(f"R-squared (R²): {r_value**2:.4f}")
+print(f"Regression Line: {metric} = {slope:.4f} * {secMetric} + {intercept:.4f}")
+print(f"p-value: {p_value:.4e}")
+`;
+    }
+
     case 'COMPARISON':
     case 'STATISTICAL':
-      return `# DataMind AI - Welch's Two-Sample Independent t-Test
+      return `# Smart Data Analysis Assistant - Welch's Two-Sample Independent t-Test
 import pandas as pd
 from scipy import stats
 
@@ -1028,7 +1540,7 @@ print(f"Statistically Significant (alpha=0.05): {p_val < 0.05}")
 `;
 
     default:
-      return `# DataMind AI - General Dataset Summary
+      return `# Smart Data Analysis Assistant - General Dataset Summary
 import pandas as pd
 
 df = working_dataset.copy()

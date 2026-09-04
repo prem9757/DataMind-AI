@@ -123,18 +123,50 @@ export class NaturalLanguageVizParser {
       result.dateRangePreset = 'last_year';
     }
 
-    // 6. Match Metric Column
+    // 6. Match Chart Types from explicit prompt keywords
+    if (/\b(scatter|scatter plot|dispersion|bivariate)\b/i.test(q)) {
+      result.chartType = 'scatter';
+    } else if (/\b(donut|donut chart)\b/i.test(q)) {
+      result.chartType = 'donut';
+    } else if (/\b(pie|pie chart)\b/i.test(q)) {
+      result.chartType = 'pie';
+    } else if (/\b(horizontal bar|horizontal)\b/i.test(q)) {
+      result.chartType = 'horizontal_bar';
+    } else if (/\b(area|area chart)\b/i.test(q)) {
+      result.chartType = 'area';
+    } else if (/\b(box plot|boxplot|box-plot|whisker)\b/i.test(q)) {
+      result.chartType = 'box';
+    } else if (/\b(histogram|distribution plot)\b/i.test(q)) {
+      result.chartType = 'histogram';
+    } else if (/\b(line|line chart|trendline)\b/i.test(q) && !result.chartType) {
+      result.chartType = 'line';
+    } else if (/\b(bar|bar chart|column chart)\b/i.test(q) && !result.chartType) {
+      result.chartType = 'bar';
+    }
+
+    // 7. Match Metric Columns
     const numCols = columns.filter(c => {
       const p = profiles[c];
       return p && (p.type === 'numeric' || p.type === 'integer' || p.type === 'float');
     });
 
+    const matchedNumCols: string[] = [];
     for (const col of numCols) {
       const cleanCol = col.toLowerCase().replace(/_/g, ' ');
       if (q.includes(cleanCol) || q.includes(col.toLowerCase())) {
-        result.metricColumn = col;
-        break;
+        matchedNumCols.push(col);
       }
+    }
+
+    // Sort by order of appearance in query
+    matchedNumCols.sort((a, b) => {
+      const posA = q.indexOf(a.toLowerCase());
+      const posB = q.indexOf(b.toLowerCase());
+      return posA - posB;
+    });
+
+    if (matchedNumCols.length > 0) {
+      result.metricColumn = matchedNumCols[0];
     }
 
     // Fallback metric matching if not explicit
@@ -150,7 +182,7 @@ export class NaturalLanguageVizParser {
       }
     }
 
-    // 7. Match Date Column
+    // 8. Match Date Column
     const dateCols = columns.filter(c => {
       const p = profiles[c];
       return p && (p.type === 'datetime' || p.type === 'date' || /date|time|timestamp|day|month|year|created/i.test(c));
@@ -168,7 +200,7 @@ export class NaturalLanguageVizParser {
       result.dateColumn = dateCols[0];
     }
 
-    // 8. Match Dimension (by Category, by Region, by Segment)
+    // 9. Match Dimension (by Category, by Region, by Segment)
     const catCols = columns.filter(c => {
       const p = profiles[c];
       return p && (p.type === 'categorical' || p.type === 'text' || p.type === 'boolean');
@@ -183,7 +215,14 @@ export class NaturalLanguageVizParser {
       }
     }
 
-    // 9. Top N Matching
+    // If query mentions two numeric columns (e.g. "sales by profit", "profit vs sales") and no categorical dimension:
+    if (matchedNumCols.length >= 2 && !result.dimensionColumn) {
+      result.dimensionColumn = matchedNumCols[1]; // X-axis variable
+      result.metricColumn = matchedNumCols[0];    // Y-axis variable
+      result.chartType = 'scatter';
+    }
+
+    // 10. Top N Matching
     const topNMatch = q.match(/\btop\s+(\d+)\b/i);
     if (topNMatch && topNMatch[1]) {
       result.topN = parseInt(topNMatch[1], 10);

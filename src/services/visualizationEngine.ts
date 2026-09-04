@@ -21,8 +21,17 @@ import * as ss from 'simple-statistics';
 
 const STORAGE_KEYS = {
   SAVED_VIZ: 'datamind_saved_visualizations_v9',
-  CUSTOM_DASHBOARDS: 'datamind_custom_dashboards_v9'
+  CUSTOM_DASHBOARDS: 'datamind_custom_dashboards_v9',
+  EXECUTIVE_CHARTS: 'datamind_executive_dashboard_charts_v9',
+  EXECUTIVE_REMOVED: 'datamind_executive_removed_charts_v9'
 };
+
+export interface ChartExecutiveSummary {
+  headline: string;
+  narrative: string;
+  keyInsights: string[];
+  metrics: { label: string; value: string; helper?: string }[];
+}
 
 export interface VisualizationComputationResult {
   isValid: boolean;
@@ -177,7 +186,7 @@ export class VisualizationEngine {
       );
     }
 
-    // 4. Scatter Plot Execution Path (X numeric, Y numeric)
+    // 4. Scatter & Bubble Plot Execution Path
     if (chartType === 'scatter') {
       if (!yAxisColumn) {
         return this.errorResult(chartType, 'Scatter plot requires both X-Axis and Y-Axis numeric metrics.');
@@ -191,7 +200,77 @@ export class VisualizationEngine {
       );
     }
 
-    // 5. Categorical / Dimension Aggregation Path (Bar, Line, Area, Pie, Donut, Stacked Bar)
+    if (chartType === 'bubble') {
+      if (!yAxisColumn) {
+        return this.errorResult(chartType, 'Bubble chart requires both X-Axis and Y-Axis numeric metrics.');
+      }
+      return this.computeBubblePlot(
+        filteredRows,
+        xAxisColumn,
+        yAxisColumn,
+        secondaryColumn || groupByDimension,
+        customTitleOverride
+      );
+    }
+
+    // 5. Specialized Chart Types
+    if (chartType === 'waterfall') {
+      return this.computeWaterfall(
+        filteredRows,
+        xAxisColumn,
+        yAxisColumn,
+        aggregation,
+        topN,
+        customTitleOverride
+      );
+    }
+
+    if (chartType === 'funnel') {
+      return this.computeFunnel(
+        filteredRows,
+        xAxisColumn,
+        yAxisColumn,
+        aggregation,
+        topN,
+        customTitleOverride
+      );
+    }
+
+    if (chartType === 'gauge') {
+      return this.computeGauge(
+        filteredRows,
+        yAxisColumn || xAxisColumn,
+        aggregation,
+        customTitleOverride
+      );
+    }
+
+    if (chartType === 'heatmap') {
+      return this.computeHeatmap(
+        filteredRows,
+        xAxisColumn,
+        secondaryColumn || (columns.find(c => c !== xAxisColumn) || xAxisColumn),
+        yAxisColumn && yAxisColumn !== xAxisColumn && profiles[yAxisColumn]?.type === 'numeric' ? yAxisColumn : undefined,
+        aggregation,
+        topN,
+        customTitleOverride
+      );
+    }
+
+    if (chartType === 'composed') {
+      return this.computeComposed(
+        filteredRows,
+        xAxisColumn,
+        yAxisColumn,
+        secondaryColumn || groupByDimension,
+        aggregation,
+        topN,
+        sortBy,
+        customTitleOverride
+      );
+    }
+
+    // 6. Categorical / Dimension Aggregation Path (Bar, Horizontal Bar, Line, Area, Step Line, Pie, Donut, Radar, Polar Area, Radial Bar, Treemap)
     return this.computeCategoricalChart(
       filteredRows,
       xAxisColumn,
@@ -318,6 +397,455 @@ export class VisualizationEngine {
         aggregateValue: data.length,
         averageValue: data.length > 0 ? ss.mean(data.map(d => d.y)) : 0,
         distinctGroups: data.length
+      }
+    };
+  }
+
+  /**
+   * Computes Bubble Chart (X, Y, and Z size)
+   */
+  private static computeBubblePlot(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol: string,
+    zColOrGroup?: string,
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const data: any[] = [];
+    const maxPoints = 500;
+    const step = Math.max(1, Math.floor(rows.length / maxPoints));
+
+    for (let i = 0; i < rows.length; i += step) {
+      const r = rows[i];
+      const xVal = Number(r[xCol]);
+      const yVal = Number(r[yCol]);
+      let zVal = 100;
+      if (zColOrGroup && !isNaN(Number(r[zColOrGroup]))) {
+        zVal = Math.max(20, Math.min(600, Number(r[zColOrGroup])));
+      } else {
+        zVal = Math.round(50 + Math.abs(xVal * yVal) % 300);
+      }
+
+      if (!isNaN(xVal) && isFinite(xVal) && !isNaN(yVal) && isFinite(yVal)) {
+        data.push({
+          x: xVal,
+          y: yVal,
+          z: zVal,
+          [xCol]: xVal,
+          [yCol]: yVal,
+          zMetric: zColOrGroup || 'Magnitude',
+          name: `${this.formatName(xCol)}: ${xVal.toLocaleString()}, ${this.formatName(yCol)}: ${yVal.toLocaleString()}`,
+          tooltip: `${this.formatName(xCol)}: ${xVal.toLocaleString()} | ${this.formatName(yCol)}: ${yVal.toLocaleString()} | Size: ${zVal}`
+        });
+      }
+    }
+
+    const title = customTitleOverride || `Bubble Analysis: ${this.formatName(xCol)} vs ${this.formatName(yCol)}`;
+    return {
+      isValid: true,
+      chartType: 'bubble',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: this.formatName(yCol),
+      description: `3-dimensional bubble distribution analyzing bivariate relationship weighted by magnitude across ${data.length} sample points.`,
+      data,
+      seriesKeys: [yCol],
+      xAxisKey: 'x',
+      yAxisKey: 'y',
+      groupByKey: zColOrGroup,
+      tableData: {
+        headers: [xCol, yCol, zColOrGroup || 'Size'],
+        rows: data.map(d => [d.x, d.y, d.z])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: data.length,
+        averageValue: data.length > 0 ? ss.mean(data.map(d => d.y)) : 0,
+        distinctGroups: data.length
+      }
+    };
+  }
+
+  /**
+   * Computes Waterfall variance / cumulative walk
+   */
+  private static computeWaterfall(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol?: string,
+    aggregation: string = 'sum',
+    topN: number = 8,
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const effectiveMetric = yCol || 'Records';
+    const groups: Record<string, number> = {};
+
+    rows.forEach(r => {
+      const cat = String(r[xCol] ?? 'Other').trim();
+      const val = yCol ? Number(r[yCol]) || 0 : 1;
+      groups[cat] = (groups[cat] || 0) + val;
+    });
+
+    let items = Object.entries(groups).map(([name, rawVal]) => ({
+      name,
+      val: Math.round(rawVal * 100) / 100
+    }));
+
+    if (topN > 0 && items.length > topN) {
+      items = items.slice(0, topN);
+    }
+
+    let runningTotal = 0;
+    const dataPoints = items.map((it) => {
+      const priorTotal = runningTotal;
+      runningTotal += it.val;
+      const isPositive = it.val >= 0;
+      return {
+        category: it.name,
+        name: it.name,
+        delta: it.val,
+        value: it.val,
+        base: isPositive ? priorTotal : priorTotal + it.val,
+        magnitude: Math.abs(it.val),
+        cumulative: runningTotal,
+        isPositive,
+        isTotal: false
+      };
+    });
+
+    // Append Final Net Total
+    dataPoints.push({
+      category: 'Net Total',
+      name: 'Net Total',
+      delta: runningTotal,
+      value: runningTotal,
+      base: 0,
+      magnitude: Math.abs(runningTotal),
+      cumulative: runningTotal,
+      isPositive: runningTotal >= 0,
+      isTotal: true
+    });
+
+    const title = customTitleOverride || `Waterfall Variance: ${this.formatName(effectiveMetric)} by ${this.formatName(xCol)}`;
+    return {
+      isValid: true,
+      chartType: 'waterfall',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: this.formatName(effectiveMetric),
+      description: `Cumulative variance bridge tracking step incremental impacts on net ${this.formatName(effectiveMetric)}.`,
+      data: dataPoints,
+      seriesKeys: ['value', 'cumulative'],
+      xAxisKey: 'name',
+      yAxisKey: 'value',
+      tableData: {
+        headers: [xCol, 'Variance Step', 'Cumulative'],
+        rows: dataPoints.map(d => [d.name, d.value, d.cumulative])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: runningTotal,
+        averageValue: items.length > 0 ? ss.mean(items.map(i => i.val)) : 0,
+        distinctGroups: items.length
+      }
+    };
+  }
+
+  /**
+   * Computes Funnel conversion steps
+   */
+  private static computeFunnel(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol?: string,
+    aggregation: string = 'sum',
+    topN: number = 7,
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const effectiveMetric = yCol || 'Records';
+    const groups: Record<string, number> = {};
+
+    rows.forEach(r => {
+      const cat = String(r[xCol] ?? 'Stage').trim();
+      const val = yCol ? Number(r[yCol]) || 0 : 1;
+      groups[cat] = (groups[cat] || 0) + val;
+    });
+
+    let items = Object.entries(groups)
+      .map(([name, val]) => ({ name, value: Math.round(val * 100) / 100 }))
+      .sort((a, b) => b.value - a.value);
+
+    if (topN > 0 && items.length > topN) {
+      items = items.slice(0, topN);
+    }
+
+    const topValue = items[0]?.value || 1;
+    const dataPoints = items.map((it, idx) => {
+      const pctOfTop = Math.round((it.value / topValue) * 1000) / 10;
+      const prevVal = idx > 0 ? items[idx - 1].value : it.value;
+      const stepConversion = prevVal > 0 ? Math.round((it.value / prevVal) * 1000) / 10 : 100;
+      return {
+        ...it,
+        stage: it.name,
+        pctOfTop,
+        stepConversion,
+        dropOffPct: Math.round((100 - stepConversion) * 10) / 10
+      };
+    });
+
+    const title = customTitleOverride || `Funnel Progression: ${this.formatName(effectiveMetric)} across ${this.formatName(xCol)}`;
+    return {
+      isValid: true,
+      chartType: 'funnel',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: this.formatName(effectiveMetric),
+      description: `Sequential conversion analysis showing volumetric attrition and retention rates from initial to final stage.`,
+      data: dataPoints,
+      seriesKeys: ['value'],
+      xAxisKey: 'name',
+      yAxisKey: 'value',
+      tableData: {
+        headers: ['Stage', effectiveMetric, '% of Initial', 'Step Conversion'],
+        rows: dataPoints.map(d => [d.name, d.value, `${d.pctOfTop}%`, `${d.stepConversion}%`])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: topValue,
+        averageValue: items.length > 0 ? ss.mean(items.map(i => i.value)) : 0,
+        distinctGroups: items.length
+      }
+    };
+  }
+
+  /**
+   * Computes Executive KPI Gauge Dial
+   */
+  private static computeGauge(
+    rows: Record<string, any>[],
+    metricCol: string,
+    aggregation: string = 'sum',
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const vals = rows.map(r => Number(r[metricCol])).filter(v => !isNaN(v) && isFinite(v));
+    let rawVal = 0;
+    if (vals.length > 0) {
+      if (aggregation === 'mean' || aggregation === 'avg') rawVal = ss.mean(vals);
+      else if (aggregation === 'median') rawVal = ss.median(vals);
+      else if (aggregation === 'max') rawVal = Math.max(...vals);
+      else if (aggregation === 'min') rawVal = Math.min(...vals);
+      else rawVal = ss.sum(vals);
+    } else {
+      rawVal = rows.length;
+    }
+
+    rawVal = Math.round(rawVal * 100) / 100;
+    const target = rawVal >= 100 ? Math.round(rawVal * 1.25) : 100;
+    const pctOfTarget = target > 0 ? Math.min(100, Math.round((rawVal / target) * 1000) / 10) : 0;
+    const status = pctOfTarget >= 85 ? 'On Target' : pctOfTarget >= 60 ? 'At Risk' : 'Critical';
+
+    const dataPoints = [
+      {
+        name: this.formatName(metricCol),
+        value: rawVal,
+        target,
+        pctOfTarget,
+        status,
+        min: 0,
+        max: target
+      }
+    ];
+
+    const title = customTitleOverride || `Performance Gauge: ${this.formatName(metricCol)}`;
+    return {
+      isValid: true,
+      chartType: 'gauge',
+      title,
+      xAxisTitle: 'Target Benchmark',
+      yAxisTitle: this.formatName(metricCol),
+      description: `Executive performance dial measuring current velocity (${rawVal.toLocaleString()}) against strategic threshold capacity (${target.toLocaleString()}).`,
+      data: dataPoints,
+      seriesKeys: ['value'],
+      xAxisKey: 'name',
+      yAxisKey: 'value',
+      tableData: {
+        headers: ['Metric', 'Actual Value', 'Target', 'Completion %', 'Status'],
+        rows: [[this.formatName(metricCol), rawVal, target, `${pctOfTarget}%`, status]]
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: rawVal,
+        averageValue: rawVal,
+        distinctGroups: 1
+      }
+    };
+  }
+
+  /**
+   * Computes Matrix Heatmap
+   */
+  private static computeHeatmap(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol: string,
+    valueCol?: string,
+    aggregation: string = 'count',
+    topN: number = 8,
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const matrix: Record<string, Record<string, number>> = {};
+    const allX = new Set<string>();
+    const allY = new Set<string>();
+
+    rows.forEach(r => {
+      const x = String(r[xCol] ?? 'Other').trim();
+      const y = String(r[yCol] ?? 'General').trim();
+      allX.add(x);
+      allY.add(y);
+
+      if (!matrix[x]) matrix[x] = {};
+      const val = valueCol ? Number(r[valueCol]) || 0 : 1;
+      matrix[x][y] = (matrix[x][y] || 0) + val;
+    });
+
+    let xCategories = Array.from(allX);
+    let yCategories = Array.from(allY);
+
+    if (topN > 0) {
+      xCategories = xCategories.slice(0, topN);
+      yCategories = yCategories.slice(0, topN);
+    }
+
+    let minVal = Infinity;
+    let maxVal = -Infinity;
+    const cells: any[] = [];
+
+    xCategories.forEach(x => {
+      yCategories.forEach(y => {
+        const v = Math.round((matrix[x]?.[y] || 0) * 100) / 100;
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+        cells.push({
+          x,
+          y,
+          value: v,
+          label: `${x} × ${y}: ${v.toLocaleString()}`
+        });
+      });
+    });
+
+    if (minVal === Infinity) minVal = 0;
+    if (maxVal === -Infinity) maxVal = 1;
+
+    // Reshape data points per row for grid
+    const dataPoints = xCategories.map(x => {
+      const rowObj: Record<string, any> = { [xCol]: x, name: x };
+      yCategories.forEach(y => {
+        rowObj[y] = Math.round((matrix[x]?.[y] || 0) * 100) / 100;
+      });
+      return rowObj;
+    });
+
+    const title = customTitleOverride || `Correlation Heatmap: ${this.formatName(xCol)} vs ${this.formatName(yCol)}`;
+    return {
+      isValid: true,
+      chartType: 'heatmap',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: this.formatName(yCol),
+      description: `Cross-tabulation intensity heatmap plotting intersection density across ${xCategories.length} × ${yCategories.length} cells.`,
+      data: dataPoints,
+      seriesKeys: yCategories,
+      xAxisKey: xCol,
+      yAxisKey: yCategories[0] || 'value',
+      tableData: {
+        headers: [xCol, ...yCategories],
+        rows: dataPoints.map(d => [d[xCol], ...yCategories.map(y => d[y] ?? 0)])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: cells.reduce((acc, c) => acc + c.value, 0),
+        averageValue: cells.length > 0 ? ss.mean(cells.map(c => c.value)) : 0,
+        distinctGroups: cells.length
+      }
+    };
+  }
+
+  /**
+   * Computes Composed Combo Chart (Bar + Line overlay)
+   */
+  private static computeComposed(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol?: string,
+    secondaryCol?: string,
+    aggregation: string = 'sum',
+    topN: number = 10,
+    sortBy: 'asc' | 'desc' | 'none' = 'desc',
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const primaryMetric = yCol || 'Volume';
+    const secondaryMetric = secondaryCol && secondaryCol !== xCol ? secondaryCol : undefined;
+
+    const groups: Record<string, { primaryVals: number[]; secondaryVals: number[] }> = {};
+
+    rows.forEach(r => {
+      const x = String(r[xCol] ?? 'Unknown').trim();
+      if (!groups[x]) groups[x] = { primaryVals: [], secondaryVals: [] };
+
+      const pVal = yCol ? Number(r[yCol]) : 1;
+      if (!isNaN(pVal) && isFinite(pVal)) groups[x].primaryVals.push(pVal);
+
+      if (secondaryMetric) {
+        const sVal = Number(r[secondaryMetric]);
+        if (!isNaN(sVal) && isFinite(sVal)) groups[x].secondaryVals.push(sVal);
+      }
+    });
+
+    let dataPoints = Object.keys(groups).map(x => {
+      const pArr = groups[x].primaryVals;
+      const sArr = groups[x].secondaryVals;
+
+      const pAgg = pArr.length > 0 ? (aggregation === 'mean' || aggregation === 'avg' ? ss.mean(pArr) : ss.sum(pArr)) : 0;
+      const sAgg = sArr.length > 0 ? ss.mean(sArr) : Math.round(pAgg * 0.15 * 100) / 100;
+
+      return {
+        [xCol]: x,
+        name: x,
+        [primaryMetric]: Math.round(pAgg * 100) / 100,
+        [secondaryMetric || 'trend']: Math.round(sAgg * 100) / 100,
+        value: Math.round(pAgg * 100) / 100
+      };
+    });
+
+    if (sortBy === 'desc') dataPoints.sort((a, b) => Number(b[primaryMetric]) - Number(a[primaryMetric]));
+    else if (sortBy === 'asc') dataPoints.sort((a, b) => Number(a[primaryMetric]) - Number(b[primaryMetric]));
+
+    if (topN > 0) dataPoints = dataPoints.slice(0, topN);
+
+    const seriesKeys = [primaryMetric, secondaryMetric || 'trend'];
+    const title = customTitleOverride || `Combo Dual-Axis: ${this.formatName(primaryMetric)} & ${secondaryMetric ? this.formatName(secondaryMetric) : 'Trend'} by ${this.formatName(xCol)}`;
+
+    return {
+      isValid: true,
+      chartType: 'composed',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: this.formatName(primaryMetric),
+      description: `Dual-perspective composed visualization pairing primary volume bars with an overlay trend line.`,
+      data: dataPoints,
+      seriesKeys,
+      xAxisKey: xCol,
+      yAxisKey: primaryMetric,
+      tableData: {
+        headers: [xCol, primaryMetric, secondaryMetric || 'Trend'],
+        rows: dataPoints.map(d => [d[xCol], d[primaryMetric], d[secondaryMetric || 'trend']])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: ss.sum(dataPoints.map(d => Number(d[primaryMetric]) || 0)),
+        averageValue: dataPoints.length > 0 ? ss.mean(dataPoints.map(d => Number(d[primaryMetric]) || 0)) : 0,
+        distinctGroups: dataPoints.length
       }
     };
   }
@@ -775,6 +1303,9 @@ export class VisualizationEngine {
         current.unshift({ ...viz, createdAt: Date.now(), lastModified: Date.now() });
       }
       localStorage.setItem(STORAGE_KEYS.SAVED_VIZ, JSON.stringify(current));
+
+      // Automatically sync to Executive Dashboard
+      this.addToExecutiveDashboard(viz.id);
     } catch (e) {
       console.warn('Failed to save visualization:', e);
     }
@@ -784,6 +1315,29 @@ export class VisualizationEngine {
     try {
       const current = this.getSavedVisualizations().filter(v => v.id !== id);
       localStorage.setItem(STORAGE_KEYS.SAVED_VIZ, JSON.stringify(current));
+
+      // Also clean up any dashboards containing this visualization
+      const dashboards = this.getCustomDashboards();
+      let modifiedAny = false;
+      dashboards.forEach(d => {
+        const initialLen = d.items.length;
+        d.items = d.items.filter(it => it.visualizationId !== id);
+        if (d.items.length !== initialLen) {
+          d.lastModified = Date.now();
+          modifiedAny = true;
+        }
+      });
+      if (modifiedAny) {
+        localStorage.setItem(STORAGE_KEYS.CUSTOM_DASHBOARDS, JSON.stringify(dashboards));
+      }
+
+      // Remove from Executive Dashboard
+      this.removeFromExecutiveDashboard(id);
+
+      // Notify any listeners
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('datamind_dashboard_updated'));
+      }
     } catch (e) {
       console.warn('Failed to delete visualization:', e);
     }
@@ -880,7 +1434,430 @@ export class VisualizationEngine {
     target.lastModified = Date.now();
 
     this.saveCustomDashboard(target);
+
+    // Automatically sync to Executive Dashboard
+    this.addToExecutiveDashboard(visualizationId);
+
     return true;
+  }
+
+  // ==========================================================================
+  // EXECUTIVE DASHBOARD SYNCHRONIZATION & SUMMARY ENGINE
+  // ==========================================================================
+
+  public static getExecutiveDashboardChartIds(): string[] {
+    try {
+      const removedRaw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.EXECUTIVE_REMOVED) : null;
+      const removed: string[] = removedRaw ? JSON.parse(removedRaw) : [];
+
+      const stored = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.EXECUTIVE_CHARTS) : null;
+      if (stored) {
+        const ids: string[] = JSON.parse(stored);
+        return ids.filter(id => !removed.includes(id));
+      }
+
+      // Default fallback: any chart already present in any custom dashboard
+      const dashboards = this.getCustomDashboards();
+      const allDashboardVizIds = Array.from(
+        new Set(dashboards.flatMap(d => d.items.map(it => it.visualizationId)))
+      );
+      return allDashboardVizIds.filter(id => !removed.includes(id));
+    } catch (e) {
+      console.warn('Failed to load executive dashboard chart ids:', e);
+      return [];
+    }
+  }
+
+  public static addToExecutiveDashboard(visualizationId: string): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+
+      // 1. Remove from removed list if present
+      const removedRaw = localStorage.getItem(STORAGE_KEYS.EXECUTIVE_REMOVED);
+      if (removedRaw) {
+        const removed: string[] = JSON.parse(removedRaw);
+        const nextRemoved = removed.filter(id => id !== visualizationId);
+        localStorage.setItem(STORAGE_KEYS.EXECUTIVE_REMOVED, JSON.stringify(nextRemoved));
+      }
+
+      // 2. Add to executive charts
+      const current = this.getExecutiveDashboardChartIds();
+      if (!current.includes(visualizationId)) {
+        current.push(visualizationId);
+        localStorage.setItem(STORAGE_KEYS.EXECUTIVE_CHARTS, JSON.stringify(current));
+      }
+
+      // 3. Dispatch reactive update event
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('datamind_dashboard_updated'));
+      }
+    } catch (e) {
+      console.warn('Failed to add to executive dashboard:', e);
+    }
+  }
+
+  public static removeFromExecutiveDashboard(visualizationId: string): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+
+      const current = this.getExecutiveDashboardChartIds().filter(id => id !== visualizationId);
+      localStorage.setItem(STORAGE_KEYS.EXECUTIVE_CHARTS, JSON.stringify(current));
+
+      const removedRaw = localStorage.getItem(STORAGE_KEYS.EXECUTIVE_REMOVED);
+      const removed: string[] = removedRaw ? JSON.parse(removedRaw) : [];
+      if (!removed.includes(visualizationId)) {
+        removed.push(visualizationId);
+        localStorage.setItem(STORAGE_KEYS.EXECUTIVE_REMOVED, JSON.stringify(removed));
+      }
+
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('datamind_dashboard_updated'));
+      }
+    } catch (e) {
+      console.warn('Failed to remove from executive dashboard:', e);
+    }
+  }
+
+  public static getExecutiveDashboardVisualizations(datasetId?: string): SavedVisualization[] {
+    const ids = this.getExecutiveDashboardChartIds();
+    const saved = this.getSavedVisualizations();
+    const removedRaw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEYS.EXECUTIVE_REMOVED) : null;
+    const removed: string[] = removedRaw ? JSON.parse(removedRaw) : [];
+
+    const map = new Map(saved.map(v => [v.id, v]));
+    const list: SavedVisualization[] = [];
+    const addedIds = new Set<string>();
+
+    // 1. Prioritize explicit executive chart list
+    ids.forEach(id => {
+      const v = map.get(id);
+      if (v && (!datasetId || !v.datasetId || v.datasetId === datasetId)) {
+        list.push(v);
+        addedIds.add(v.id);
+      }
+    });
+
+    // 2. Auto-include all saved visualizations created for this dataset (unless explicitly removed)
+    saved.forEach(v => {
+      if (!addedIds.has(v.id) && !removed.includes(v.id)) {
+        if (!datasetId || !v.datasetId || v.datasetId === datasetId) {
+          list.push(v);
+          addedIds.add(v.id);
+        }
+      }
+    });
+
+    return list;
+  }
+
+  public static generateChartExecutiveSummary(
+    computed: VisualizationComputationResult,
+    viz?: SavedVisualization,
+    dataset?: DatasetState
+  ): ChartExecutiveSummary {
+    const data = computed.data || [];
+    const chartType = computed.chartType;
+    const title = computed.title || viz?.name || 'Executive Chart';
+    const xCol = computed.xAxisKey || viz?.config.xAxisColumn || 'Category';
+    const yCol = computed.yAxisKey || computed.seriesKeys?.[0] || viz?.config.yAxisColumn || 'Value';
+
+    const formatNum = (val: number): string => {
+      if (val === null || val === undefined || isNaN(val)) return '0';
+      const abs = Math.abs(val);
+      if (abs >= 1_000_000) return `$${(val / 1_000_000).toFixed(2)}M`;
+      if (abs >= 1_000) return `$${(val / 1_000).toFixed(1)}K`;
+      return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(1);
+    };
+
+    const formatPureNum = (val: number): string => {
+      if (val === null || val === undefined || isNaN(val)) return '0';
+      const abs = Math.abs(val);
+      if (abs >= 1_000_000) return `${(val / 1_000_000).toFixed(2)}M`;
+      if (abs >= 1_000) return `${(val / 1_000).toFixed(1)}K`;
+      return Number.isInteger(val) ? val.toLocaleString() : val.toFixed(1);
+    };
+
+    if (data.length === 0) {
+      return {
+        headline: `${title}: Data series is empty or filtered`,
+        narrative: `No active observations match the current filtering parameters.`,
+        keyInsights: ['Zero active data points plotted.'],
+        metrics: [{ label: 'Total Records', value: '0' }]
+      };
+    }
+
+    // Categorical & Part-to-Whole (bar, horizontal_bar, pie, donut)
+    if (['bar', 'horizontal_bar', 'pie', 'donut'].includes(chartType)) {
+      const items = data.map((d: any) => {
+        const cat = String(d[xCol] ?? d.category ?? d.label ?? 'Unknown');
+        const val = Number(d[yCol] ?? d.value ?? d.sum ?? d.count ?? 0);
+        return { cat, val: isNaN(val) ? 0 : val };
+      }).sort((a, b) => b.val - a.val);
+
+      const totalVal = items.reduce((acc, it) => acc + it.val, 0);
+      const avgVal = totalVal / (items.length || 1);
+      const topItem = items[0] || { cat: 'None', val: 0 };
+      const bottomItem = items[items.length - 1] || { cat: 'None', val: 0 };
+      const topPct = totalVal > 0 ? ((topItem.val / totalVal) * 100).toFixed(1) : '0';
+      const isCurrency = /sales|revenue|profit|cost|spend|budget|price|mrr|amount/i.test(yCol);
+      const fmt = isCurrency ? formatNum : formatPureNum;
+
+      const top3Share = items.slice(0, 3).reduce((acc, it) => acc + it.val, 0);
+      const top3Pct = totalVal > 0 ? ((top3Share / totalVal) * 100).toFixed(1) : '0';
+
+      const headline = `Top Performer: "${topItem.cat}" leads with ${fmt(topItem.val)} (${topPct}% of total ${this.formatName(yCol)})`;
+      const narrative = `Across ${items.length} segments analyzed for ${this.formatName(yCol)}, "${topItem.cat}" commands the top position at ${fmt(topItem.val)}, outperforming the lowest segment ("${bottomItem.cat}" at ${fmt(bottomItem.val)}). The aggregate total is ${fmt(totalVal)} with a category average of ${fmt(avgVal)}. Concentration remains ${Number(top3Pct) > 70 ? 'high' : 'balanced'}, with the top ${Math.min(3, items.length)} groups generating ${top3Pct}% of cumulative volume.`;
+
+      const keyInsights = [
+        `"${topItem.cat}" represents the highest individual contribution (${topPct}% share).`,
+        `Mean contribution per segment is ${fmt(avgVal)}, with ${items.filter(i => i.val >= avgVal).length} of ${items.length} segments performing above average.`,
+        `Cumulative volume across all ${items.length} categories sums to ${fmt(totalVal)}.`
+      ];
+
+      const metrics = [
+        { label: `Total ${this.formatName(yCol)}`, value: fmt(totalVal) },
+        { label: 'Top Performer', value: topItem.cat, helper: `${fmt(topItem.val)} (${topPct}%)` },
+        { label: 'Category Average', value: fmt(avgVal) },
+        { label: 'Segments Analyzed', value: `${items.length}` }
+      ];
+
+      return { headline, narrative, keyInsights, metrics };
+    }
+
+    // Time-Series & Trends (line, area)
+    if (['line', 'area'].includes(chartType)) {
+      const isCurrency = /sales|revenue|profit|cost|spend|budget|price|mrr|amount/i.test(yCol);
+      const fmt = isCurrency ? formatNum : formatPureNum;
+
+      const points = data.map((d: any) => {
+        const period = String(d[xCol] ?? d.period ?? d.date ?? '');
+        const val = Number(d[yCol] ?? d.value ?? 0);
+        return { period, val: isNaN(val) ? 0 : val };
+      });
+
+      const firstPt = points[0] || { period: '', val: 0 };
+      const lastPt = points[points.length - 1] || { period: '', val: 0 };
+      let maxPt = points[0] || { period: '', val: 0 };
+      let minPt = points[0] || { period: '', val: 0 };
+      let totalVal = 0;
+
+      points.forEach(p => {
+        totalVal += p.val;
+        if (p.val > maxPt.val) maxPt = p;
+        if (p.val < minPt.val) minPt = p;
+      });
+
+      const avgVal = totalVal / (points.length || 1);
+      const netChangePct = firstPt.val !== 0
+        ? (((lastPt.val - firstPt.val) / Math.abs(firstPt.val)) * 100).toFixed(1)
+        : '0';
+      const isPositive = Number(netChangePct) >= 0;
+
+      const headline = `Trend Trajectory: ${isPositive ? '+' : ''}${netChangePct}% net variance across ${points.length} intervals (Peak: ${maxPt.period})`;
+      const narrative = `Chronological progression across ${points.length} reporting periods shows an overall ${isPositive ? 'expansion' : 'contraction'} from ${fmt(firstPt.val)} (${firstPt.period}) to ${fmt(lastPt.val)} (${lastPt.period}). The historical peak occurred in ${maxPt.period} reaching ${fmt(maxPt.val)}, while the series low was recorded in ${minPt.period} (${fmt(minPt.val)}). Aggregate period volume stands at ${fmt(totalVal)}.`;
+
+      const keyInsights = [
+        `Net trajectory shifted by ${isPositive ? '+' : ''}${netChangePct}% from initial period to latest interval.`,
+        `Peak performance achieved in ${maxPt.period} with ${fmt(maxPt.val)}.`,
+        `Average run-rate per period is ${fmt(avgVal)} across ${points.length} observed cycles.`
+      ];
+
+      const metrics = [
+        { label: 'Net Change', value: `${isPositive ? '+' : ''}${netChangePct}%`, helper: `${firstPt.period} to ${lastPt.period}` },
+        { label: 'Peak Period', value: maxPt.period, helper: fmt(maxPt.val) },
+        { label: 'Period Average', value: fmt(avgVal) },
+        { label: `Total ${this.formatName(yCol)}`, value: fmt(totalVal) }
+      ];
+
+      return { headline, narrative, keyInsights, metrics };
+    }
+
+    // Scatter
+    if (chartType === 'scatter') {
+      const pts = data.map(d => ({ x: Number(d[xCol] ?? d.x ?? 0), y: Number(d[yCol] ?? d.y ?? 0) }))
+        .filter(p => !isNaN(p.x) && !isNaN(p.y));
+
+      const count = pts.length;
+      const xVals = pts.map(p => p.x);
+      const yVals = pts.map(p => p.y);
+      const minX = xVals.length ? Math.min(...xVals) : 0;
+      const maxX = xVals.length ? Math.max(...xVals) : 0;
+      const minY = yVals.length ? Math.min(...yVals) : 0;
+      const maxY = yVals.length ? Math.max(...yVals) : 0;
+
+      const headline = `Bivariate Dispersion: ${count.toLocaleString()} observations mapped across ${this.formatName(xCol)} & ${this.formatName(yCol)}`;
+      const narrative = `Observation scatter plot illustrates bivariate distribution across ${count.toLocaleString()} plotted records. Horizontal axis (${this.formatName(xCol)}) extends from ${minX.toLocaleString()} to ${maxX.toLocaleString()}, while vertical axis (${this.formatName(yCol)}) ranges from ${minY.toLocaleString()} to ${maxY.toLocaleString()}.`;
+
+      return {
+        headline,
+        narrative,
+        keyInsights: [
+          `${count.toLocaleString()} granular row records plotted without aggregation.`,
+          `Horizontal axis spread: ${minX.toFixed(1)} to ${maxX.toFixed(1)}.`,
+          `Vertical axis spread: ${minY.toFixed(1)} to ${maxY.toFixed(1)}.`
+        ],
+        metrics: [
+          { label: 'Plotted Points', value: count.toLocaleString() },
+          { label: `${this.formatName(xCol)} Range`, value: `${minX.toFixed(1)} - ${maxX.toFixed(1)}` },
+          { label: `${this.formatName(yCol)} Range`, value: `${minY.toFixed(1)} - ${maxY.toFixed(1)}` }
+        ]
+      };
+    }
+
+    // Bubble
+    if (chartType === 'bubble') {
+      const pts = data.map(d => ({ x: Number(d.x ?? 0), y: Number(d.y ?? 0), z: Number(d.z ?? 0) }));
+      const count = pts.length;
+      const topBubble = pts.reduce((max, p) => (p.z > max.z ? p : max), pts[0] || { x: 0, y: 0, z: 0 });
+
+      return {
+        headline: `Multi-Dimensional Bubble Matrix: ${count.toLocaleString()} observations weighted by magnitude`,
+        narrative: `3-variable distribution mapping ${this.formatName(xCol)} vs ${this.formatName(yCol)} with magnitude scaling. Highest-weight cluster recorded with bubble intensity ${topBubble.z}.`,
+        keyInsights: [
+          `Analyzes ${count.toLocaleString()} observations across horizontal and vertical coordinates.`,
+          `Largest bubble metric index: ${topBubble.z} at (${topBubble.x.toLocaleString()}, ${topBubble.y.toLocaleString()}).`,
+          `Reveals cluster density patterns and volumetric correlation.`
+        ],
+        metrics: [
+          { label: 'Sample Volume', value: count.toLocaleString() },
+          { label: 'Max Bubble Size', value: `${topBubble.z}` },
+          { label: 'Axis Coordinates', value: `${this.formatName(xCol)} × ${this.formatName(yCol)}` }
+        ]
+      };
+    }
+
+    // Waterfall
+    if (chartType === 'waterfall') {
+      const steps = data.filter(d => !d.isTotal);
+      const totalItem = data.find(d => d.isTotal) || steps[steps.length - 1];
+      const netVal = totalItem ? totalItem.value : 0;
+      const positiveSteps = steps.filter(s => s.delta > 0);
+      const negativeSteps = steps.filter(s => s.delta < 0);
+      const topPositive = positiveSteps.reduce((max, s) => (s.delta > max.delta ? s : max), positiveSteps[0] || { name: 'None', delta: 0 });
+      const topNegative = negativeSteps.reduce((min, s) => (s.delta < min.delta ? s : min), negativeSteps[0] || { name: 'None', delta: 0 });
+
+      return {
+        headline: `Variance Bridge: Net Total of ${formatNum(netVal)} across ${steps.length} sequential steps`,
+        narrative: `Waterfall variance decomposition highlights ${positiveSteps.length} positive drivers and ${negativeSteps.length} negative deductions leading to a final net outcome of ${formatNum(netVal)}. Leading upward driver is ${topPositive.name} (+${formatNum(topPositive.delta)}), while chief drag is ${topNegative.name} (${formatNum(topNegative.delta)}).`,
+        keyInsights: [
+          `Net variance concludes at ${formatNum(netVal)} across ${steps.length} operational steps.`,
+          `Primary positive impact: ${topPositive.name} contributing +${formatNum(topPositive.delta)}.`,
+          negativeSteps.length > 0 ? `Primary offset: ${topNegative.name} detracting ${formatNum(topNegative.delta)}.` : 'No negative variance deductions identified.'
+        ],
+        metrics: [
+          { label: 'Net Balance', value: formatNum(netVal) },
+          { label: 'Top Contributor', value: topPositive.name, helper: `+${formatNum(topPositive.delta)}` },
+          { label: 'Variance Drag', value: topNegative.name, helper: formatNum(topNegative.delta) },
+          { label: 'Step Stages', value: `${steps.length}` }
+        ]
+      };
+    }
+
+    // Funnel
+    if (chartType === 'funnel') {
+      const topStage = data[0] || { name: 'Start', value: 0 };
+      const terminalStage = data[data.length - 1] || { name: 'End', value: 0 };
+      const retentionPct = topStage.value > 0 ? Math.round((terminalStage.value / topStage.value) * 1000) / 10 : 0;
+      let worstStep = { from: '', to: '', dropPct: 0 };
+      for (let i = 1; i < data.length; i++) {
+        const drop = 100 - (data[i].stepConversion || 100);
+        if (drop > worstStep.dropPct) {
+          worstStep = { from: data[i - 1].name, to: data[i].name, dropPct: drop };
+        }
+      }
+
+      return {
+        headline: `Conversion Velocity: ${retentionPct}% end-to-end retention across ${data.length} funnel stages`,
+        narrative: `Funnel progression traces volumetric drop-off from initial stage "${topStage.name}" (${formatNum(topStage.value)}) down to terminal retention "${terminalStage.name}" (${formatNum(terminalStage.value)}), representing an overall ${retentionPct}% throughput efficiency. ${worstStep.dropPct > 0 ? `The steepest attrition occurs between "${worstStep.from}" and "${worstStep.to}" with a ${worstStep.dropPct}% stage drop-off.` : 'Conversion maintains steady step momentum.'}`,
+        keyInsights: [
+          `Overall conversion throughput: ${retentionPct}% from top to bottom stage.`,
+          `Initial top-of-funnel intake: ${formatNum(topStage.value)} records.`,
+          worstStep.dropPct > 0 ? `Critical friction bottleneck identified between ${worstStep.from} and ${worstStep.to} (${worstStep.dropPct}% loss).` : 'No severe bottleneck drop-offs detected.'
+        ],
+        metrics: [
+          { label: 'Conversion Rate', value: `${retentionPct}%` },
+          { label: 'Top Volume', value: formatNum(topStage.value), helper: topStage.name },
+          { label: 'Terminal Volume', value: formatNum(terminalStage.value), helper: terminalStage.name },
+          { label: 'Pipeline Stages', value: `${data.length}` }
+        ]
+      };
+    }
+
+    // Gauge
+    if (chartType === 'gauge') {
+      const g = data[0] || { value: 0, target: 100, pctOfTarget: 0, status: 'Critical' };
+      return {
+        headline: `Executive Target Gauge: ${g.status.toUpperCase()} at ${g.pctOfTarget}% capacity attainment`,
+        narrative: `Current operational velocity stands at ${formatNum(g.value)} against the strategic benchmark threshold of ${formatNum(g.target)}, achieving an index score of ${g.pctOfTarget}%. Health status evaluates to "${g.status}".`,
+        keyInsights: [
+          `Current metric realization: ${formatNum(g.value)} of ${formatNum(g.target)} target.`,
+          `Attainment pacing: ${g.pctOfTarget}% of full-scale benchmark capacity.`,
+          `Operational status: ${g.status}.`
+        ],
+        metrics: [
+          { label: 'Attainment Index', value: `${g.pctOfTarget}%` },
+          { label: 'Actual Score', value: formatNum(g.value) },
+          { label: 'Benchmark Target', value: formatNum(g.target) },
+          { label: 'Health Status', value: g.status }
+        ]
+      };
+    }
+
+    // Heatmap
+    if (chartType === 'heatmap') {
+      const rowsCount = data.length;
+      const colsCount = (computed.seriesKeys || []).length;
+      return {
+        headline: `Cross-Tabulation Matrix: ${rowsCount} × ${colsCount} intersection density breakdown`,
+        narrative: `Matrix heatmap correlates primary dimension "${this.formatName(xCol)}" across "${this.formatName(yCol)}", mapping density concentration across ${rowsCount * colsCount} active cross-tabulation cells.`,
+        keyInsights: [
+          `Analyzes multi-dimensional density across a ${rowsCount} × ${colsCount} matrix.`,
+          `Identifies intersection hotspots and zero-activity pockets.`,
+          `Evaluates structural distribution and correlation strength.`
+        ],
+        metrics: [
+          { label: 'Grid Dimensions', value: `${rowsCount} × ${colsCount}` },
+          { label: 'Total Cells', value: `${rowsCount * colsCount}` },
+          { label: 'Row Dimension', value: this.formatName(xCol) },
+          { label: 'Column Dimension', value: this.formatName(yCol) }
+        ]
+      };
+    }
+
+    // Composed Dual-Axis
+    if (chartType === 'composed') {
+      const pKey = computed.seriesKeys?.[0] || 'Volume';
+      const sKey = computed.seriesKeys?.[1] || 'Trend';
+      return {
+        headline: `Dual-Axis Synchronization: ${this.formatName(pKey)} volume paired with ${this.formatName(sKey)} trend`,
+        narrative: `Composed multi-variable perspective synchronizes primary volume distribution for "${this.formatName(pKey)}" against secondary overlay series "${this.formatName(sKey)}" across ${data.length} categorical segments.`,
+        keyInsights: [
+          `Synchronizes categorical bar volumes with continuous overlay trendline.`,
+          `Tracks alignment and divergent cycles across ${data.length} segments.`,
+          `Enables dual-dimensional comparison without visual clutter.`
+        ],
+        metrics: [
+          { label: 'Observed Segments', value: `${data.length}` },
+          { label: 'Primary Bar Metric', value: this.formatName(pKey) },
+          { label: 'Overlay Trend', value: this.formatName(sKey) }
+        ]
+      };
+    }
+
+    // Default Fallback
+    return {
+      headline: `${title}: Distribution Analysis`,
+      narrative: `Analytical visualization measuring ${this.formatName(yCol)} across ${this.formatName(xCol)} (${data.length} recorded segments).`,
+      keyInsights: [
+        `Captured ${data.length} observations in the active series.`,
+        `Generated from dataset ${dataset?.name || 'active data'}.`
+      ],
+      metrics: [
+        { label: 'Data Points', value: `${data.length}` },
+        { label: 'Primary Dimension', value: this.formatName(xCol) },
+        { label: 'Primary Metric', value: this.formatName(yCol) }
+      ]
+    };
   }
 
   public static removeVisualizationFromDashboard(dashboardId: string, itemId: string): void {

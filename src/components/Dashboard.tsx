@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import {
   Sparkles,
   ShieldCheck,
@@ -13,9 +13,17 @@ import {
   Layers,
   TableProperties,
   PieChart,
-  Bot
+  Bot,
+  Trash2,
+  Plus,
+  Edit3,
+  X,
+  AlertTriangle,
+  FileText
 } from 'lucide-react';
 import { DatasetState } from '../types/dataset';
+import { SavedVisualization } from '../types/visualization';
+import { VisualizationEngine } from '../services/visualizationEngine';
 import { ChartViewer } from './ChartViewer';
 import {
   computeGroupSummary,
@@ -47,7 +55,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <Database className="w-8 h-8" />
         </div>
         <div className="space-y-2">
-          <h1 className="text-3xl font-bold text-slate-100 tracking-tight">Welcome to DataMind AI</h1>
+          <h1 className="text-3xl font-bold text-slate-100 tracking-tight">Welcome to Smart Data Analysis Assistant</h1>
           <p className="text-slate-400 text-sm max-w-md mx-auto leading-relaxed">
             Clean, professional data analysis and automated intelligence. Upload your dataset or choose a pre-loaded scenario to get started.
           </p>
@@ -114,6 +122,37 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
   const trendData = primaryDate && primaryNum ? computeTimeSeriesTrend(workingRows, primaryDate, primaryNum, 'month') : [];
   const groupData = primaryCat && primaryNum ? computeGroupSummary(workingRows, primaryCat, primaryNum).slice(0, 6) : [];
+
+  // Executive Dashboard Visualizations & Summaries
+  const [executiveVisualizations, setExecutiveVisualizations] = useState<SavedVisualization[]>([]);
+  const [chartToDeleteFromExec, setChartToDeleteFromExec] = useState<SavedVisualization | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const loadExecutiveCharts = () => {
+    if (!dataset) return;
+    const list = VisualizationEngine.getExecutiveDashboardVisualizations(dataset.id);
+    setExecutiveVisualizations(list);
+  };
+
+  useEffect(() => {
+    loadExecutiveCharts();
+    const handleUpdate = () => loadExecutiveCharts();
+    window.addEventListener('datamind_dashboard_updated', handleUpdate);
+    return () => window.removeEventListener('datamind_dashboard_updated', handleUpdate);
+  }, [dataset?.id]);
+
+  const handleRemoveFromExecutive = (viz: SavedVisualization, permanently: boolean) => {
+    if (permanently) {
+      VisualizationEngine.deleteVisualization(viz.id);
+      setToastMessage(`Permanently deleted "${viz.name}" from all dashboards.`);
+    } else {
+      VisualizationEngine.removeFromExecutiveDashboard(viz.id);
+      setToastMessage(`Removed "${viz.name}" from Executive Dashboard.`);
+    }
+    setChartToDeleteFromExec(null);
+    loadExecutiveCharts();
+    setTimeout(() => setToastMessage(null), 3500);
+  };
 
   // Top 4 clean KPIs
   const displayKPIs = useMemo(() => {
@@ -320,105 +359,355 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* 4. 1-2 Executive Charts (Performance Trajectory & Segment Distribution) */}
-      <div className="space-y-3">
-        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-          Executive Visualizations
-        </h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Chart 1: Time Series Trend or Primary Distribution */}
-          <div className="bg-[#12151C] border border-[#252A36] rounded-2xl p-5 shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-200">
-                {trendData.length > 0 ? `${primaryNum || 'Sales'} Performance Trajectory` : 'Primary Metric Distribution'}
-              </h3>
-              <button
-                onClick={() => {
-                  const prompt = `Analyze the performance trajectory and moving average of ${primaryNum || 'primary metric'} in dataset "${dataset.name}".`;
-                  onSelectQuery(prompt);
-                }}
-                className="px-2 py-0.5 rounded-lg bg-[#181D26] text-[10px] text-amber-400 hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
-              >
-                <Bot className="w-2.5 h-2.5" />
-                <span>Ask AI</span>
-              </button>
-            </div>
-            {trendData.length > 0 ? (
-              <ChartViewer
-                type="line"
-                title={`${primaryNum || 'Sales'} Monthly Trend`}
-                data={trendData.map(t => ({
-                  Period: t.period,
-                  [primaryNum || 'Value']: t.value,
-                  'Moving Average': t.movingAverage
-                }))}
-                xAxisKey="Period"
-                keys={[primaryNum || 'Value', 'Moving Average']}
-                xAxisLabel="Time Period"
-                yAxisLabel={`Total ${primaryNum || 'Value'}`}
-                height={260}
-                allowFullscreen={false}
-              />
-            ) : groupData.length > 0 ? (
-              <ChartViewer
-                type="bar"
-                title={`${primaryNum || 'Value'} by ${primaryCat || 'Category'}`}
-                data={groupData.map(g => ({
-                  [primaryCat || 'Category']: g.category,
-                  Total: g.sum
-                }))}
-                xAxisKey={primaryCat || 'Category'}
-                yAxisKey="Total"
-                xAxisLabel={primaryCat || 'Category'}
-                yAxisLabel={`Total ${primaryNum || 'Value'}`}
-                height={260}
-                allowFullscreen={false}
-              />
-            ) : (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                No chart available for current dimensions.
-              </div>
+      {/* 4. Executive Visualizations & Automated Summaries */}
+      <div className="space-y-4 pt-2">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              <span>Executive Dashboard Visualizations & Summaries</span>
+            </h2>
+            {executiveVisualizations.length > 0 && (
+              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                {executiveVisualizations.length} synced
+              </span>
             )}
           </div>
+          <button
+            onClick={() => onNavigate('visualizations')}
+            className="text-xs text-amber-400 hover:text-amber-300 transition flex items-center gap-1.5 cursor-pointer font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add / Manage Charts</span>
+          </button>
+        </div>
 
-          {/* Chart 2: Top Segment Breakdown */}
-          <div className="bg-[#12151C] border border-[#252A36] rounded-2xl p-5 shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-bold text-slate-200">
-                {primaryCat ? `Breakdown by ${primaryCat}` : 'Segment Concentration'}
-              </h3>
-              <button
-                onClick={() => {
-                  const prompt = `Analyze segment performance and distribution across ${primaryCat || 'categories'} for ${primaryNum || 'metrics'}.`;
-                  onSelectQuery(prompt);
-                }}
-                className="px-2 py-0.5 rounded-lg bg-[#181D26] text-[10px] text-amber-400 hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
-              >
-                <Bot className="w-2.5 h-2.5" />
-                <span>Ask AI</span>
-              </button>
+        {/* Dynamic Synchronized Dashboard Charts with Automated Summaries */}
+        {executiveVisualizations.length > 0 ? (
+          <div className="space-y-6">
+            {executiveVisualizations.map(viz => {
+              const computed = VisualizationEngine.compute(
+                dataset,
+                viz.config,
+                viz.chartType,
+                viz.customTitle || viz.name
+              );
+              const summary = VisualizationEngine.generateChartExecutiveSummary(computed, viz, dataset);
+
+              return (
+                <div
+                  key={viz.id}
+                  className="bg-[#12151C] border border-[#252A36] hover:border-amber-500/40 rounded-2xl p-5 shadow-xl transition space-y-4 group"
+                >
+                  {/* Card Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222734]">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                          {viz.chartType.replace('_', ' ')}
+                        </span>
+                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-amber-300 transition">
+                          {viz.customTitle || viz.name}
+                        </h3>
+                      </div>
+                      {viz.description && (
+                        <p className="text-xs text-slate-400 max-w-xl">
+                          {viz.description}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => {
+                          const prompt = `Provide an executive strategic briefing for the chart "${viz.customTitle || viz.name}". Key context: ${summary.headline}. Narrative: ${summary.narrative}`;
+                          onSelectQuery(prompt);
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-[#181D26] hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-[#2B3242] text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                        title="Ask AI about this executive chart"
+                      >
+                        <Bot className="w-3 h-3" />
+                        <span>Ask AI</span>
+                      </button>
+                      <button
+                        onClick={() => onNavigate('visualizations')}
+                        className="p-1.5 rounded-lg bg-[#181D26] hover:bg-[#202634] text-slate-400 hover:text-amber-400 border border-[#2B3242] transition cursor-pointer"
+                        title="Open in Data Visualisation Studio"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => setChartToDeleteFromExec(viz)}
+                        className="p-1.5 rounded-lg bg-[#181D26] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-[#2B3242] hover:border-rose-500/30 transition cursor-pointer"
+                        title="Delete or remove chart"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Split Body: Chart Canvas (Left) + Automated Executive Summary (Right) */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
+                    {/* Left Canvas */}
+                    <div className="lg:col-span-7 bg-[#0B0D11] border border-[#1E232E] rounded-xl p-3 flex flex-col justify-center">
+                      <ChartViewer
+                        type={computed.chartType as any}
+                        title=""
+                        data={computed.data}
+                        xAxisKey={computed.xAxisKey}
+                        yAxisKey={computed.yAxisKey}
+                        keys={computed.seriesKeys}
+                        xAxisLabel={computed.xAxisTitle}
+                        yAxisLabel={computed.yAxisTitle}
+                        height={270}
+                        allowFullscreen={true}
+                      />
+                    </div>
+
+                    {/* Right Summary Panel */}
+                    <div className="lg:col-span-5 bg-[#0F1218] border border-[#222836] rounded-xl p-4 flex flex-col justify-between space-y-3">
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between border-b border-[#222734] pb-2">
+                          <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span className="uppercase tracking-wider text-[10px]">Automated Executive Summary</span>
+                          </div>
+                          <span className="text-[10px] text-slate-500">Auto Computed</span>
+                        </div>
+
+                        {/* Headline */}
+                        <div className="space-y-1">
+                          <h4 className="text-xs font-bold text-slate-100 leading-snug">
+                            {summary.headline}
+                          </h4>
+                          <p className="text-[11px] text-slate-300 leading-relaxed">
+                            {summary.narrative}
+                          </p>
+                        </div>
+
+                        {/* Key Insights */}
+                        {summary.keyInsights && summary.keyInsights.length > 0 && (
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                              Strategic Highlights
+                            </span>
+                            <ul className="space-y-1">
+                              {summary.keyInsights.map((ins, i) => (
+                                <li key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                                  <span className="text-amber-400 font-bold mt-0.5">•</span>
+                                  <span>{ins}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Metrics Grid */}
+                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#222734]">
+                        {summary.metrics.map((m, i) => (
+                          <div key={i} className="bg-[#141820] border border-[#232936] rounded-lg p-2 space-y-0.5">
+                            <span className="text-[10px] text-slate-400 block truncate">{m.label}</span>
+                            <span className="text-xs font-bold text-slate-100 font-mono block truncate">{m.value}</span>
+                            {m.helper && (
+                              <span className="text-[9px] text-amber-400/80 block truncate">{m.helper}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="bg-[#12151C] border border-[#252A36] border-dashed rounded-2xl p-6 text-center space-y-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 flex items-center justify-center mx-auto">
+              <Sparkles className="w-5 h-5" />
             </div>
-            {groupData.length > 0 ? (
-              <ChartViewer
-                type="donut"
-                title={`${primaryNum || 'Value'} by ${primaryCat || 'Category'}`}
-                data={groupData.map(g => ({
-                  category: g.category,
-                  value: g.sum
-                }))}
-                xAxisKey="category"
-                yAxisKey="value"
-                height={260}
-                allowFullscreen={false}
-              />
-            ) : (
-              <div className="text-center py-12 text-slate-400 text-xs">
-                Additional categorical breakdown will appear when segment columns are detected.
+            <div className="max-w-md mx-auto space-y-1">
+              <h3 className="text-xs font-bold text-slate-200">
+                Automated Executive Charts Sync
+              </h3>
+              <p className="text-[11px] text-slate-400 leading-relaxed">
+                Any chart you add to a dashboard in the Data Visualisation section will automatically sync here with a live computed executive summary and key strategic insights.
+              </p>
+            </div>
+            <button
+              onClick={() => onNavigate('visualizations')}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition inline-flex items-center gap-2 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Charts to Dashboard</span>
+            </button>
+          </div>
+        )}
+
+        {/* Baseline Automated Trajectory & Distribution */}
+        <div className="pt-4 border-t border-[#222734]">
+          <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">
+            Baseline Automated Trajectory
+          </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Chart 1: Time Series Trend or Primary Distribution */}
+            <div className="bg-[#12151C] border border-[#252A36] rounded-2xl p-5 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-200">
+                  {trendData.length > 0 ? `${primaryNum || 'Sales'} Performance Trajectory` : 'Primary Metric Distribution'}
+                </h3>
+                <button
+                  onClick={() => {
+                    const prompt = `Analyze the performance trajectory and moving average of ${primaryNum || 'primary metric'} in dataset "${dataset.name}".`;
+                    onSelectQuery(prompt);
+                  }}
+                  className="px-2 py-0.5 rounded-lg bg-[#181D26] text-[10px] text-amber-400 hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Bot className="w-2.5 h-2.5" />
+                  <span>Ask AI</span>
+                </button>
               </div>
-            )}
+              {trendData.length > 0 ? (
+                <ChartViewer
+                  type="line"
+                  title={`${primaryNum || 'Sales'} Monthly Trend`}
+                  data={trendData.map(t => ({
+                    Period: t.period,
+                    [primaryNum || 'Value']: t.value,
+                    'Moving Average': t.movingAverage
+                  }))}
+                  xAxisKey="Period"
+                  keys={[primaryNum || 'Value', 'Moving Average']}
+                  xAxisLabel="Time Period"
+                  yAxisLabel={`Total ${primaryNum || 'Value'}`}
+                  height={260}
+                  allowFullscreen={false}
+                />
+              ) : groupData.length > 0 ? (
+                <ChartViewer
+                  type="bar"
+                  title={`${primaryNum || 'Value'} by ${primaryCat || 'Category'}`}
+                  data={groupData.map(g => ({
+                    [primaryCat || 'Category']: g.category,
+                    Total: g.sum
+                  }))}
+                  xAxisKey={primaryCat || 'Category'}
+                  yAxisKey="Total"
+                  xAxisLabel={primaryCat || 'Category'}
+                  yAxisLabel={`Total ${primaryNum || 'Value'}`}
+                  height={260}
+                  allowFullscreen={false}
+                />
+              ) : (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  No chart available for current dimensions.
+                </div>
+              )}
+            </div>
+
+            {/* Chart 2: Top Segment Breakdown */}
+            <div className="bg-[#12151C] border border-[#252A36] rounded-2xl p-5 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-bold text-slate-200">
+                  {primaryCat ? `Breakdown by ${primaryCat}` : 'Segment Concentration'}
+                </h3>
+                <button
+                  onClick={() => {
+                    const prompt = `Analyze segment performance and distribution across ${primaryCat || 'categories'} for ${primaryNum || 'metrics'}.`;
+                    onSelectQuery(prompt);
+                  }}
+                  className="px-2 py-0.5 rounded-lg bg-[#181D26] text-[10px] text-amber-400 hover:bg-amber-500/20 transition flex items-center gap-1 cursor-pointer"
+                >
+                  <Bot className="w-2.5 h-2.5" />
+                  <span>Ask AI</span>
+                </button>
+              </div>
+              {groupData.length > 0 ? (
+                <ChartViewer
+                  type="donut"
+                  title={`${primaryNum || 'Value'} by ${primaryCat || 'Category'}`}
+                  data={groupData.map(g => ({
+                    category: g.category,
+                    value: g.sum
+                  }))}
+                  xAxisKey="category"
+                  yAxisKey="value"
+                  height={260}
+                  allowFullscreen={false}
+                />
+              ) : (
+                <div className="text-center py-12 text-slate-400 text-xs">
+                  Additional categorical breakdown will appear when segment columns are detected.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Delete / Remove Confirmation Modal for Executive Dashboard */}
+      {chartToDeleteFromExec && (
+        <div className="fixed inset-0 bg-[#0B0D11]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12151C] border border-[#2D3342] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 text-rose-400">
+                <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-100">Delete Dashboard Chart?</h3>
+                  <p className="text-xs text-slate-400 font-mono mt-0.5">{chartToDeleteFromExec.name}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setChartToDeleteFromExec(null)}
+                className="p-1 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-[#181D26] transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Choose how you want to handle this chart. You can remove it from the Executive Dashboard or delete it permanently across all dashboards.
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setChartToDeleteFromExec(null)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#181D26] hover:bg-[#202733] border border-[#2D3342] text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleRemoveFromExecutive(chartToDeleteFromExec, false)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#202634] hover:bg-[#2A3345] border border-[#3A4358] text-amber-300 font-bold text-xs transition cursor-pointer"
+              >
+                Remove from Executive View
+              </button>
+              <button
+                onClick={() => handleRemoveFromExecutive(chartToDeleteFromExec, true)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs shadow-md shadow-rose-500/20 transition cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#161B24] border border-[#2E3646] text-slate-100 text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+          <span>{toastMessage}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-0.5 rounded text-slate-400 hover:text-slate-200 ml-2"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 };

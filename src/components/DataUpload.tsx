@@ -148,7 +148,7 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
       <div className="border-b border-[#252A36] pb-4">
         <h1 className="text-xl font-bold text-slate-100 tracking-tight">Data Ingestion</h1>
         <p className="text-xs text-slate-400 mt-1">
-          Bring your tabular data into DataMind AI. Upload a CSV or Excel spreadsheet, or pick a sample dataset.
+          Bring your tabular data into Smart Data Analysis Assistant. Upload a CSV or Excel spreadsheet, or pick a sample dataset.
         </p>
       </div>
 

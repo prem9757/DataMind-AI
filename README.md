@@ -1,6 +1,6 @@
-# DataMind AI — Autonomous Data Analysis & Machine Learning Workbench
+# Smart Data Analysis Assistant — Autonomous Data Analysis & Machine Learning Workbench
 
-**DataMind AI** is an enterprise-grade, browser-native exploratory data analysis, statistical computing, machine learning, and executive reporting suite powered by server-side Gemini intelligence and deterministic Python/TypeScript numerical engines.
+**Smart Data Analysis Assistant** is an enterprise-grade, browser-native exploratory data analysis, statistical computing, machine learning, and executive reporting suite powered by server-side Gemini intelligence and deterministic Python/TypeScript numerical engines.
 
 ---
 

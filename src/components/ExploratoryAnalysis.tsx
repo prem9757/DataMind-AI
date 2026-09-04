@@ -99,9 +99,78 @@ export const ExploratoryAnalysis: React.FC<ExploratoryAnalysisProps> = ({
   const [selectedUniCol, setSelectedUniCol] = useState<string>(numCols[0] || columns[0]);
 
   // Bivariate State
-  const [biCol1, setBiCol1] = useState<string>(catCols[0] || columns[0]);
-  const [biCol2, setBiCol2] = useState<string>(numCols[0] || columns[1]);
-  const [biAggregation, setBiAggregation] = useState<'sum' | 'mean' | 'median' | 'count'>('sum');
+  const initialBiCol1 = numCols.length >= 2 ? numCols[0] : (catCols[0] || columns[0]);
+  const initialBiCol2 = numCols.length >= 2 ? numCols[1] : (numCols[0] || columns[1]);
+  const [biCol1, setBiCol1] = useState<string>(initialBiCol1);
+  const [biCol2, setBiCol2] = useState<string>(initialBiCol2);
+  const [biAggregation, setBiAggregation] = useState<'none' | 'sum' | 'mean' | 'median' | 'count'>('none');
+
+  // Bivariate Scatter & Correlation
+  const scatterCorrelation = useMemo(() => {
+    if (profiles[biCol1]?.type !== 'numeric' || profiles[biCol2]?.type !== 'numeric') return null;
+    const xVals: number[] = [];
+    const yVals: number[] = [];
+    for (const r of workingRows) {
+      const x = Number(r[biCol1]);
+      const y = Number(r[biCol2]);
+      if (!isNaN(x) && isFinite(x) && !isNaN(y) && isFinite(y)) {
+        xVals.push(x);
+        yVals.push(y);
+      }
+    }
+    if (xVals.length < 3) return null;
+    try {
+      const n = xVals.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+      for (let i = 0; i < n; i++) {
+        sumX += xVals[i];
+        sumY += yVals[i];
+        sumXY += xVals[i] * yVals[i];
+        sumX2 += xVals[i] * xVals[i];
+        sumY2 += yVals[i] * yVals[i];
+      }
+      const num = n * sumXY - sumX * sumY;
+      const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+      if (den === 0) return 0;
+      return num / den;
+    } catch {
+      return null;
+    }
+  }, [workingRows, biCol1, biCol2, profiles]);
+
+  const scatterData = useMemo(() => {
+    if (!biCol1 || !biCol2) return [];
+    const isXNum = profiles[biCol1]?.type === 'numeric';
+    const pts: any[] = [];
+    for (let i = 0; i < workingRows.length && pts.length < 1000; i++) {
+      const r = workingRows[i];
+      const val1 = r[biCol1];
+      const val2 = r[biCol2];
+      if (val1 === null || val1 === undefined || val1 === '' || val2 === null || val2 === undefined || val2 === '') continue;
+      const num2 = Number(val2);
+      if (isNaN(num2) || !isFinite(num2)) continue;
+      if (isXNum) {
+        const num1 = Number(val1);
+        if (isNaN(num1) || !isFinite(num1)) continue;
+        pts.push({
+          x: num1,
+          y: num2,
+          label: `Obs #${i + 1}`,
+          [biCol1]: num1,
+          [biCol2]: num2
+        });
+      } else {
+        pts.push({
+          x: String(val1),
+          y: num2,
+          label: `Obs #${i + 1}`,
+          [biCol1]: String(val1),
+          [biCol2]: num2
+        });
+      }
+    }
+    return pts;
+  }, [workingRows, biCol1, biCol2, profiles]);
 
   // Correlation Matrix State
   const [corrMethod, setCorrMethod] = useState<'pearson' | 'spearman'>('pearson');
@@ -790,12 +859,18 @@ export const ExploratoryAnalysis: React.FC<ExploratoryAnalysisProps> = ({
             </div>
 
             <div>
-              <label className="text-[10px] font-bold text-slate-400 uppercase">Aggregation</label>
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Aggregation</label>
+                {biAggregation === 'none' && (
+                  <span className="text-[9px] font-mono text-emerald-400 font-semibold uppercase">Scatter / Raw</span>
+                )}
+              </div>
               <select
                 value={biAggregation}
                 onChange={e => setBiAggregation(e.target.value as any)}
                 className="w-full mt-1 bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-1.5 text-xs text-slate-200 font-medium focus:outline-none focus:border-amber-500"
               >
+                <option value="none">Don't Summarize</option>
                 <option value="sum">Sum (Total)</option>
                 <option value="mean">Mean (Average)</option>
                 <option value="median">Median</option>
@@ -805,24 +880,50 @@ export const ExploratoryAnalysis: React.FC<ExploratoryAnalysisProps> = ({
           </div>
 
           {/* Bivariate Render */}
-          {profiles[biCol1]?.type === 'numeric' && profiles[biCol2]?.type === 'numeric' ? (
-            <ChartViewer
-              type="scatter"
-              title={`${biCol1} vs ${biCol2} Scatter Dispersion`}
-              data={workingRows.slice(0, 150).map(r => ({
-                x: Number(r[biCol1]) || 0,
-                y: Number(r[biCol2]) || 0
-              }))}
-              xAxisLabel={biCol1}
-              yAxisLabel={biCol2}
-              height={400}
-              description={`Bivariate numeric correlation dispersion between ${biCol1} and ${biCol2}.`}
-            />
+          {biAggregation === 'none' ? (
+            <div className="space-y-3">
+              <ChartViewer
+                type="scatter"
+                title={`${biCol1} vs ${biCol2} Scatter Dispersion`}
+                data={scatterData}
+                xAxisLabel={biCol1}
+                yAxisLabel={biCol2}
+                height={420}
+                description={
+                  profiles[biCol1]?.type === 'numeric' && profiles[biCol2]?.type === 'numeric'
+                    ? `Unsummarized raw observation scatter plot across ${biCol1} and ${biCol2} (${scatterData.length.toLocaleString()} observations plotted without aggregation${scatterCorrelation !== null ? ` • Pearson r = ${scatterCorrelation > 0 ? '+' : ''}${scatterCorrelation.toFixed(3)}` : ''}).`
+                    : `Unsummarized raw point dispersion across categories of ${biCol1} (${scatterData.length.toLocaleString()} records).`
+                }
+              />
+              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-[#12151C] border border-[#252A36] text-xs">
+                <div className="flex flex-wrap items-center gap-4 text-slate-400">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Plotted Observations:</span>
+                    <span className="font-mono font-semibold text-slate-200">{scatterData.length.toLocaleString()} points</span>
+                  </div>
+                  {scatterCorrelation !== null && (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] uppercase font-bold text-slate-500">Pearson r:</span>
+                      <span className={`font-mono font-bold ${scatterCorrelation > 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {scatterCorrelation > 0 ? '+' : ''}{scatterCorrelation.toFixed(3)} ({Math.abs(scatterCorrelation) > 0.7 ? 'Strong' : Math.abs(scatterCorrelation) > 0.3 ? 'Moderate' : 'Weak'})
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] uppercase font-bold text-slate-500">Mode:</span>
+                    <span className="font-semibold text-amber-400">Don't Summarize (Raw Points)</span>
+                  </div>
+                </div>
+                <span className="text-[11px] font-mono text-slate-500">
+                  Granular row-level data • No aggregation applied
+                </span>
+              </div>
+            </div>
           ) : (
             <ChartViewer
               type="bar"
               title={`${biAggregation.toUpperCase()} of ${biCol2} by ${biCol1}`}
-              data={computeGroupSummary(workingRows, biCol1, biCol2, biAggregation).slice(0, 12).map(s => ({
+              data={computeGroupSummary(workingRows, biCol1, biCol2, biAggregation as 'sum' | 'mean' | 'median' | 'count').slice(0, 16).map(s => ({
                 [biCol1]: s.category,
                 [biCol2]: s.value,
                 'Average': s.mean,
@@ -833,7 +934,7 @@ export const ExploratoryAnalysis: React.FC<ExploratoryAnalysisProps> = ({
               xAxisLabel={biCol1}
               yAxisLabel={`${biAggregation.toUpperCase()} of ${biCol2}`}
               height={400}
-              description={`Grouped bivariate slice comparing ${biCol2} across ${biCol1} categories.`}
+              description={`Grouped bivariate slice comparing ${biAggregation} of ${biCol2} across ${biCol1} categories.`}
             />
           )}
         </div>

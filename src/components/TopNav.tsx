@@ -36,7 +36,7 @@ export const TopNav: React.FC<TopNavProps> = ({
         <div className="flex items-center gap-2">
           <Database className="w-4 h-4 text-amber-400 shrink-0" />
           <h2 className="text-sm font-semibold text-slate-100 truncate max-w-xs" title={dataset?.name || 'No Dataset'}>
-            {dataset ? dataset.name : 'DataMind AI Workbench'}
+            {dataset ? dataset.name : 'Smart Data Analysis Assistant'}
           </h2>
           {dataset && (
             <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-[#181D26] border border-[#2B3242] text-amber-400">

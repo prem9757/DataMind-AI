@@ -139,6 +139,13 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
   const [globalDateFilter, setGlobalDateFilter] = useState<DateRangePreset>('all_time');
   const [activeFilters, setActiveFilters] = useState<DashboardActiveFilter[]>([]);
 
+  // Delete Chart State & Notification
+  const [chartToDelete, setChartToDelete] = useState<{
+    item: CustomDashboardItem;
+    viz: SavedVisualization;
+  } | null>(null);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   // Current Dashboard
   const currentDashboard = useMemo(() => {
     return dashboards.find(d => d.id === selectedDashboardId) || dashboards[0];
@@ -299,6 +306,9 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
 
     const newItems: CustomDashboardItem[] = [...currentDashboard.items];
     selectedVizIdsToAdd.forEach(vizId => {
+      // Automatically add to Executive Dashboard
+      VisualizationEngine.addToExecutiveDashboard(vizId);
+
       if (!existingIds.has(vizId)) {
         newItems.push({
           id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
@@ -312,6 +322,8 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
     saveCurrentDashboardChanges({ items: newItems });
     setSelectedVizIdsToAdd([]);
     setShowAddVizModal(false);
+    setToastMessage(`Added ${selectedVizIdsToAdd.length} chart(s) to Dashboard & Executive Dashboard with automated summaries!`);
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   // Remove Item from Dashboard
@@ -319,6 +331,32 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
     if (!currentDashboard) return;
     const updatedItems = currentDashboard.items.filter(i => i.id !== itemId);
     saveCurrentDashboardChanges({ items: updatedItems });
+  };
+
+  // Confirm Delete Chart (Remove from this dashboard OR delete permanently)
+  const handleConfirmDeleteChart = (permanently: boolean) => {
+    if (!chartToDelete || !currentDashboard) return;
+    const { item, viz } = chartToDelete;
+
+    if (permanently) {
+      VisualizationEngine.deleteVisualization(viz.id);
+      setToastMessage(`Permanently deleted "${viz.name}" from all dashboards and Executive Dashboard.`);
+    } else {
+      handleRemoveItem(item.id);
+      // Check if visualization is still part of any other custom dashboard
+      const allDashboards = VisualizationEngine.getCustomDashboards();
+      const inOtherDashboards = allDashboards.some(d =>
+        d.id !== currentDashboard.id && d.items.some(it => it.visualizationId === viz.id)
+      );
+      if (!inOtherDashboards) {
+        VisualizationEngine.removeFromExecutiveDashboard(viz.id);
+      }
+      setToastMessage(`Removed "${viz.name}" from ${currentDashboard.name}.`);
+    }
+
+    setChartToDelete(null);
+    reloadDashboards();
+    setTimeout(() => setToastMessage(null), 3500);
   };
 
   // Change Item Width
@@ -574,7 +612,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
         <html>
         <head>
           <meta charset="utf-8" />
-          <title>${currentDashboard.name} — DataMind AI Export</title>
+          <title>${currentDashboard.name} — Smart Data Analysis Assistant Export</title>
           <style>
             body { font-family: system-ui, -apple-system, sans-serif; background: #0b0d11; color: #e2e8f0; padding: 32px; }
             h1 { color: #f59e0b; margin-bottom: 4px; }
@@ -1428,11 +1466,11 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                         <Edit3 className="w-3.5 h-3.5" />
                       </button>
 
-                      {/* Remove from Dashboard */}
+                      {/* Delete / Remove from Dashboard */}
                       <button
-                        onClick={() => handleRemoveItem(item.id)}
-                        className="p-1 rounded bg-[#181D26] hover:bg-rose-500/20 border border-[#2D3342] text-rose-400 hover:text-rose-300"
-                        title="Remove from Dashboard (does not delete visualization)"
+                        onClick={() => setChartToDelete({ item, viz })}
+                        className="p-1 rounded bg-[#181D26] hover:bg-rose-500/20 border border-[#2D3342] text-rose-400 hover:text-rose-300 transition cursor-pointer"
+                        title="Delete chart from dashboard"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1484,6 +1522,13 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                           title="Edit in Studio"
                         >
                           <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setChartToDelete({ item, viz })}
+                          className="p-1.5 rounded-lg bg-[#181D26] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-[#2B3242] hover:border-rose-500/30 transition cursor-pointer"
+                          title="Delete Chart from Dashboard"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     )}
@@ -2204,7 +2249,82 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
         </div>
       )}
 
-      {/* 35. MODAL: DELETE DASHBOARD CONFIRM */}
+      {/* 36. MODAL: DELETE DASHBOARD CHART CONFIRM */}
+      {chartToDelete && (
+        <div className="fixed inset-0 bg-[#0B0D11]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#12151C] border border-[#2D3342] rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3 text-rose-400">
+                <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                  <Trash2 className="w-5 h-5 text-rose-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100">Delete Dashboard Chart</h3>
+                  <p className="text-[11px] text-slate-400">
+                    {chartToDelete.viz.customTitle || chartToDelete.viz.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setChartToDelete(null)}
+                className="p-1 rounded-lg bg-[#181D26] text-slate-400 hover:text-slate-200 transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-[#0B0D11] border border-[#232834] rounded-xl space-y-2 text-xs">
+              <p className="text-slate-300 leading-relaxed">
+                Choose how you would like to delete this chart:
+              </p>
+              <div className="space-y-2 pt-1">
+                <div className="p-2.5 rounded-lg bg-[#141820] border border-[#252B38] space-y-1">
+                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                    <span>Remove from Current Dashboard</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Removes the card from <strong>{currentDashboard?.name}</strong>. The saved visualization remains available in your library.
+                  </p>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-[#141820] border border-[#252B38] space-y-1">
+                  <div className="font-semibold text-rose-300 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-400"></span>
+                    <span>Delete Visualization Permanently</span>
+                  </div>
+                  <p className="text-[11px] text-slate-400">
+                    Completely deletes this chart from all dashboards, the Executive Dashboard, and your saved gallery.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => setChartToDelete(null)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-[#181D26] hover:bg-[#202632] text-slate-300 text-xs font-semibold transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleConfirmDeleteChart(false)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold transition cursor-pointer"
+              >
+                Remove from Dashboard
+              </button>
+              <button
+                onClick={() => handleConfirmDeleteChart(true)}
+                className="w-full sm:w-auto px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-400 text-slate-950 font-bold text-xs shadow-md shadow-rose-500/20 transition cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 36.5 MODAL: DELETE DASHBOARD CONFIRM */}
       {deletingDashId && (
         <div className="fixed inset-0 bg-[#0B0D11]/85 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#12151C] border border-rose-500/30 rounded-2xl max-w-sm w-full p-6 space-y-4 shadow-2xl">
@@ -2230,6 +2350,20 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* 37. TOAST NOTIFICATION */}
+      {toastMessage && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#161B24] border border-[#2E3646] text-slate-100 text-xs px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></div>
+          <span>{toastMessage}</span>
+          <button
+            onClick={() => setToastMessage(null)}
+            className="p-0.5 rounded text-slate-400 hover:text-slate-200 ml-2"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
     </div>

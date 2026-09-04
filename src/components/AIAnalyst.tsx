@@ -277,6 +277,80 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({
                 </div>
               )}
 
+              {/* Mind Knowledge™ Autonomous Discovery & Proactive Dimension Expansion */}
+              {msg.mindKnowledge && (
+                <div className="bg-gradient-to-r from-[#121620] via-[#161C29] to-[#121620] rounded-2xl p-4 border border-amber-500/35 shadow-lg space-y-3 mt-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#252C3D] pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <div className="w-6 h-6 rounded-lg bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400">
+                        <BrainCircuit className="w-3.5 h-3.5" />
+                      </div>
+                      <span className="text-xs font-bold text-slate-100 tracking-tight flex items-center gap-1.5 font-sans">
+                        Mind Knowledge™
+                        <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase">
+                          Proactive Insights
+                        </span>
+                      </span>
+                    </div>
+
+                    {msg.mindKnowledge.inferredDimensions && msg.mindKnowledge.inferredDimensions.length > 0 && (
+                      <div className="flex items-center gap-1.5 text-[11px] font-mono">
+                        <span className="text-slate-500">Inferred Dimensions:</span>
+                        {msg.mindKnowledge.inferredDimensions.map((dim, dIdx) => (
+                          <span
+                            key={dIdx}
+                            className="px-2 py-0.5 rounded bg-[#0D1017] text-amber-300 font-semibold border border-[#262D3D]"
+                          >
+                            {dim}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Deep Domain Insight */}
+                  <p className="text-xs text-slate-200 leading-relaxed font-sans">
+                    {msg.mindKnowledge.deepInsight}
+                  </p>
+
+                  {/* Multi-Perspective Chart Explanations */}
+                  {msg.mindKnowledge.suggestedCharts && msg.mindKnowledge.suggestedCharts.length > 0 && (
+                    <div className="space-y-1.5 pt-1">
+                      <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wider block">
+                        Multi-Perspective Analytical Views (Click to Generate):
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {msg.mindKnowledge.suggestedCharts.map((sChart, cIdx) => (
+                          <button
+                            key={cIdx}
+                            onClick={() => handleSendMessage(sChart.prompt)}
+                            className="px-2.5 py-1.5 rounded-xl bg-[#0D1017] hover:bg-amber-500/20 border border-[#283042] hover:border-amber-500/40 text-[11px] text-slate-200 hover:text-amber-300 transition flex items-center gap-1.5 cursor-pointer font-medium shadow-sm"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                            <span>{sChart.label}</span>
+                            <ArrowRight className="w-3 h-3 text-slate-500 group-hover:text-amber-400" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Proactive Next Action Button */}
+                  {msg.mindKnowledge.actionPrompt && (
+                    <div className="pt-2 border-t border-[#202738] flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400 font-mono">Suggested Follow-Up:</span>
+                      <button
+                        onClick={() => handleSendMessage(msg.mindKnowledge!.actionPrompt!)}
+                        className="px-3 py-1.5 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/20"
+                      >
+                        <span>{msg.mindKnowledge.actionPrompt}</span>
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Supporting Data Table Drawer Toggle */}
               {msg.tableData && (
                 <div className="pt-1">
@@ -442,17 +516,26 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Suggested Quick Starters (if conversation is fresh) */}
-      {messages.length <= 1 && dataset.suggestedQuestions.length > 0 && (
+      {/* Suggested Quick Starters */}
+      {messages.length <= 1 && (
         <div className="py-2 flex items-center gap-1.5 overflow-x-auto custom-scrollbar shrink-0">
-          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider shrink-0 mr-1 font-mono">
-            Try:
+          <span className="text-[10px] font-bold text-amber-400 uppercase tracking-wider shrink-0 mr-1 font-mono flex items-center gap-1">
+            <Lightbulb className="w-3 h-3" /> Quick Prompts:
           </span>
-          {dataset.suggestedQuestions.map((q, idx) => (
+          {['Show sales by profit', 'Show sales by region', 'Scatter plot sales vs profit', 'Show profit share by region (donut)'].map((q, idx) => (
+            <button
+              key={`custom-${idx}`}
+              onClick={() => handleSendMessage(q)}
+              className="px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 hover:border-amber-400 text-[11px] text-amber-300 hover:text-white transition whitespace-nowrap shrink-0 cursor-pointer font-medium"
+            >
+              {q}
+            </button>
+          ))}
+          {dataset.suggestedQuestions.slice(0, 3).map((q, idx) => (
             <button
               key={idx}
               onClick={() => handleSendMessage(q)}
-              className="px-2.5 py-1 rounded-full bg-[#12151C] border border-[#252A36] hover:border-amber-500/40 text-[11px] text-slate-300 hover:text-white transition whitespace-nowrap shrink-0 cursor-pointer"
+              className="px-2.5 py-1 rounded-full bg-[#12151C] border border-[#252A36] hover:border-slate-500 text-[11px] text-slate-300 hover:text-white transition whitespace-nowrap shrink-0 cursor-pointer"
             >
               {q}
             </button>
@@ -473,7 +556,7 @@ export const AIAnalyst: React.FC<AIAnalystProps> = ({
             type="text"
             value={inputQuery}
             onChange={e => setInputQuery(e.target.value)}
-            placeholder={`Ask anything about your dataset... (e.g., Which region has highest revenue? Show monthly trend)`}
+            placeholder="Ask anything... e.g. 'Show sales by profit', 'Scatter plot of sales vs profit', 'Show sales by region', 'Donut chart of profit share'"
             className="flex-1 bg-[#12151C] border border-[#252A36] rounded-xl px-4 py-3 text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-amber-500 shadow-inner"
             disabled={isLoading}
           />

@@ -16,11 +16,22 @@ export type ExtendedChartType =
   | 'horizontal_bar'
   | 'line'
   | 'area'
+  | 'step_line'
   | 'pie'
   | 'donut'
   | 'scatter'
+  | 'bubble'
   | 'histogram'
-  | 'box';
+  | 'box'
+  | 'radar'
+  | 'polar_area'
+  | 'waterfall'
+  | 'funnel'
+  | 'treemap'
+  | 'heatmap'
+  | 'composed'
+  | 'gauge'
+  | 'radial_bar';
 
 export interface VisualizationFilter {
   id: string;

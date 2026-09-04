@@ -23,7 +23,9 @@ import {
   TrendingUp,
   Filter,
   Info,
-  Edit2
+  Edit2,
+  Trash2,
+  Search
 } from 'lucide-react';
 import { DatasetState } from '../types/dataset';
 import {
@@ -46,15 +48,46 @@ interface VisualizationBuilderProps {
   initialQuery?: string;
 }
 
-const SUPPORTED_CHART_TYPES: { type: ExtendedChartType; label: string; icon: string }[] = [
-  { type: 'bar', label: 'Bar', icon: '📊' },
-  { type: 'line', label: 'Line', icon: '📈' },
-  { type: 'area', label: 'Area', icon: '📉' },
-  { type: 'pie', label: 'Pie', icon: '🥧' },
-  { type: 'donut', label: 'Donut', icon: '🍩' },
-  { type: 'scatter', label: 'Scatter', icon: '⁖' },
-  { type: 'histogram', label: 'Histogram', icon: '🏛️' },
-  { type: 'box', label: 'Box Plot', icon: '📦' }
+export type ChartCategory = 'All' | 'Comparison' | 'Trends' | 'Composition' | 'Correlation' | 'Executive';
+
+export interface ChartTypeOption {
+  type: ExtendedChartType;
+  label: string;
+  category: 'Comparison' | 'Trends' | 'Composition' | 'Correlation' | 'Executive';
+  icon: string;
+  hint: string;
+}
+
+const SUPPORTED_CHART_TYPES: ChartTypeOption[] = [
+  // Comparison & Ranking (4)
+  { type: 'bar', label: 'Bar', category: 'Comparison', icon: '📊', hint: 'Compare categories or ranked values' },
+  { type: 'horizontal_bar', label: 'Horiz Bar', category: 'Comparison', icon: '📶', hint: 'Ideal for long label names & rankings' },
+  { type: 'waterfall', label: 'Waterfall', category: 'Comparison', icon: '🪜', hint: 'Variance bridge & incremental cost steps' },
+  { type: 'funnel', label: 'Funnel', category: 'Comparison', icon: '⏳', hint: 'Conversion pipeline & drop-off stages' },
+
+  // Trends & Sequences (4)
+  { type: 'line', label: 'Line Trend', category: 'Trends', icon: '📈', hint: 'Continuous timeline & performance trends' },
+  { type: 'step_line', label: 'Step Line', category: 'Trends', icon: '🪜', hint: 'Discrete rate changes & step milestones' },
+  { type: 'area', label: 'Area Chart', category: 'Trends', icon: '📉', hint: 'Cumulative volume and volume fill over time' },
+  { type: 'composed', label: 'Combo Dual', category: 'Trends', icon: '📑', hint: 'Bar volume + secondary trend line overlay' },
+
+  // Composition & Proportions (6)
+  { type: 'pie', label: 'Pie Chart', category: 'Composition', icon: '🥧', hint: 'Proportional share of total' },
+  { type: 'donut', label: 'Donut', category: 'Composition', icon: '🍩', hint: 'Circular distribution ring with hole' },
+  { type: 'treemap', label: 'Treemap', category: 'Composition', icon: '🗂️', hint: 'Hierarchical nested rectangular tiles' },
+  { type: 'radar', label: 'Radar Spider', category: 'Composition', icon: '🕸️', hint: 'Multi-variable balanced profile evaluation' },
+  { type: 'polar_area', label: 'Polar Area', category: 'Composition', icon: '🎯', hint: 'Cyclical radial segments & magnitude' },
+  { type: 'radial_bar', label: 'Radial Bar', category: 'Composition', icon: '💫', hint: 'Circular gauge meters for metric targets' },
+
+  // Correlation & Matrix (3)
+  { type: 'scatter', label: 'Scatter', category: 'Correlation', icon: '⁖', hint: 'Bivariate statistical correlation & clustering' },
+  { type: 'bubble', label: 'Bubble', category: 'Correlation', icon: '🫧', hint: '3-metric correlation: X, Y, and Bubble Size' },
+  { type: 'heatmap', label: 'Heatmap', category: 'Correlation', icon: '🗺️', hint: '2D cross-tab matrix intersection density' },
+
+  // Executive & Distribution (3)
+  { type: 'histogram', label: 'Histogram', category: 'Executive', icon: '🏛️', hint: 'Frequency distribution and bin spreads' },
+  { type: 'box', label: 'Box Plot', category: 'Executive', icon: '📦', hint: 'Quartiles, median spread & outlier detection' },
+  { type: 'gauge', label: 'KPI Gauge', category: 'Executive', icon: '🧭', hint: 'Target benchmark velocity dial & status' }
 ];
 
 export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
@@ -167,6 +200,8 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [nlQuery, setNlQuery] = useState(initialQuery || '');
   const [savedSuccessToast, setSavedSuccessToast] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<ChartCategory>('All');
+  const [chartSearchQuery, setChartSearchQuery] = useState('');
 
   // Filters state
   const [filters, setFilters] = useState<VisualizationFilter[]>(() => {
@@ -244,7 +279,7 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
     const config: VisualizationFieldConfig = {
       xAxisColumn,
       yAxisColumn,
-      secondaryColumn: groupByDimension || secondaryColumn,
+      secondaryColumn: secondaryColumn || groupByDimension,
       aggregation,
       timeGranularity,
       dateRange: {
@@ -282,8 +317,8 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
   ]);
 
   // Save Visualization
-  const handleSaveVisualization = (forceNewCopy = false) => {
-    if (!computedResult.isValid) return;
+  const handleSaveVisualization = (forceNewCopy = false): SavedVisualization | null => {
+    if (!computedResult.isValid) return null;
 
     const baseName = customTitle.trim() || computedResult.title || 'Custom Visualization';
     const isNew = forceNewCopy || !editingViz;
@@ -301,7 +336,7 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
       config: {
         xAxisColumn,
         yAxisColumn,
-        secondaryColumn: groupByDimension || secondaryColumn,
+        secondaryColumn: secondaryColumn || groupByDimension,
         aggregation,
         timeGranularity,
         dateRange: {
@@ -325,12 +360,18 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
     };
 
     VisualizationEngine.saveVisualization(newViz);
-    setSavedSuccessToast(isNew ? `Saved "${vizName}" successfully!` : `Updated "${vizName}" successfully!`);
+    setSavedSuccessToast(
+      isNew
+        ? `Saved & automatically synced "${vizName}" to Executive Dashboard!`
+        : `Updated & re-synced "${vizName}" to Executive Dashboard!`
+    );
     if (onSaveComplete) onSaveComplete(newViz);
 
     setTimeout(() => {
       setSavedSuccessToast(null);
     }, 2500);
+
+    return newViz;
   };
 
   // Add filter helper
@@ -441,9 +482,14 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
           {/* 1. CHOOSE CHART TYPE */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
-                <span>Choose Chart</span>
-              </label>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-slate-300 flex items-center gap-1.5">
+                  <span>Choose Chart Type</span>
+                </label>
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-400 border border-amber-500/25">
+                  20 Available (&gt;15)
+                </span>
+              </div>
               {recommendedChart && (
                 <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
                   Recommended: {recommendedChart}
@@ -451,22 +497,71 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
               )}
             </div>
 
-            <div className="grid grid-cols-4 gap-1.5">
-              {SUPPORTED_CHART_TYPES.map(ct => (
+            {/* Category Filter Pills */}
+            <div className="flex flex-wrap items-center gap-1 mb-2.5">
+              {(['All', 'Comparison', 'Trends', 'Composition', 'Correlation', 'Executive'] as ChartCategory[]).map(cat => {
+                const count = cat === 'All' ? SUPPORTED_CHART_TYPES.length : SUPPORTED_CHART_TYPES.filter(c => c.category === cat).length;
+                const isSelected = selectedCategory === cat;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setSelectedCategory(cat)}
+                    className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition cursor-pointer flex items-center gap-1 ${
+                      isSelected
+                        ? 'bg-amber-500 text-slate-950 font-bold shadow-sm'
+                        : 'bg-[#0B0D11] text-slate-400 hover:text-slate-200 border border-[#232836]'
+                    }`}
+                  >
+                    <span>{cat}</span>
+                    <span className="text-[9px] opacity-75 font-mono">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Quick Search */}
+            <div className="relative mb-2.5">
+              <Search className="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={chartSearchQuery}
+                onChange={e => setChartSearchQuery(e.target.value)}
+                placeholder="Filter charts (e.g., waterfall, gauge, radar)..."
+                className="w-full bg-[#0B0D11] border border-[#232836] rounded-xl pl-8 pr-3 py-1.5 text-[11px] text-slate-200 placeholder-slate-500 focus:outline-none focus:border-amber-500"
+              />
+              {chartSearchQuery && (
                 <button
-                  key={ct.type}
                   type="button"
-                  onClick={() => setChartType(ct.type)}
-                  className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer ${
-                    chartType === ct.type
-                      ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
-                      : 'bg-[#0B0D11] text-slate-300 border-[#252A36] hover:border-amber-500/40 hover:bg-[#181D26]'
-                  }`}
+                  onClick={() => setChartSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
                 >
-                  <span className="text-sm">{ct.icon}</span>
-                  <span className="text-[10px] truncate w-full">{ct.label}</span>
+                  ✕
                 </button>
-              ))}
+              )}
+            </div>
+
+            {/* Chart Grid */}
+            <div className="grid grid-cols-4 gap-1.5 max-h-[260px] overflow-y-auto pr-1 custom-scrollbar">
+              {SUPPORTED_CHART_TYPES
+                .filter(ct => selectedCategory === 'All' || ct.category === selectedCategory)
+                .filter(ct => !chartSearchQuery || ct.label.toLowerCase().includes(chartSearchQuery.toLowerCase()) || ct.hint.toLowerCase().includes(chartSearchQuery.toLowerCase()))
+                .map(ct => (
+                  <button
+                    key={ct.type}
+                    type="button"
+                    onClick={() => setChartType(ct.type)}
+                    title={`${ct.label} (${ct.category}): ${ct.hint}`}
+                    className={`p-2 rounded-xl border text-center transition flex flex-col items-center justify-center gap-1 cursor-pointer group ${
+                      chartType === ct.type
+                        ? 'bg-amber-500 text-slate-950 font-bold border-amber-400 shadow-md shadow-amber-500/20'
+                        : 'bg-[#0B0D11] text-slate-300 border-[#252A36] hover:border-amber-500/40 hover:bg-[#181D26]'
+                    }`}
+                  >
+                    <span className="text-base group-hover:scale-110 transition-transform">{ct.icon}</span>
+                    <span className="text-[10px] truncate w-full leading-tight">{ct.label}</span>
+                  </button>
+                ))}
             </div>
           </div>
 
@@ -592,8 +687,332 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
               </div>
             )}
 
-            {/* PIE / DONUT CONFIGURATION */}
-            {(chartType === 'pie' || chartType === 'donut') && (
+            {/* GAUGE CONFIGURATION */}
+            {chartType === 'gauge' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Target KPI Metric (Measure)
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Aggregation
+                  </label>
+                  <select
+                    value={aggregation}
+                    onChange={e => setAggregation(e.target.value as AggregationFunction)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average (Mean)</option>
+                    <option value="median">Median</option>
+                    <option value="max">Maximum</option>
+                    <option value="min">Minimum</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* BUBBLE CHART CONFIGURATION */}
+            {chartType === 'bubble' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    X-Axis Numeric Metric
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Y-Axis Numeric Metric
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Bubble Size / Magnitude Metric (Z-Axis)
+                  </label>
+                  <select
+                    value={secondaryColumn || numCols[2] || numCols[0]}
+                    onChange={e => setSecondaryColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Category Label / Group By (Optional)
+                  </label>
+                  <select
+                    value={groupByDimension}
+                    onChange={e => setGroupByDimension(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="">-- None --</option>
+                    {catCols.map(c => (
+                      <option key={c} value={c}>Aa {c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* COMPOSED DUAL-AXIS CONFIGURATION */}
+            {chartType === 'composed' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    X-Axis (Category or Date)
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {columns.map(c => {
+                      const p = profiles[c];
+                      const typeIcon = p?.type === 'numeric' ? '#' : p?.type === 'datetime' ? '📅' : 'Aa';
+                      return (
+                        <option key={c} value={c}>{typeIcon} {c}</option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Primary Bar Metric (Y-Axis)
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Secondary Line Metric (Trend Overlay)
+                  </label>
+                  <select
+                    value={secondaryColumn || numCols[1] || numCols[0]}
+                    onChange={e => setSecondaryColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Aggregation
+                  </label>
+                  <select
+                    value={aggregation}
+                    onChange={e => setAggregation(e.target.value as AggregationFunction)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average (Mean)</option>
+                    <option value="median">Median</option>
+                    <option value="count">Count (Total Records)</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* MATRIX HEATMAP CONFIGURATION */}
+            {chartType === 'heatmap' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Matrix Row Dimension (X-Axis)
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {catCols.map(c => (
+                      <option key={c} value={c}>Aa {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Matrix Column Dimension (Secondary)
+                  </label>
+                  <select
+                    value={secondaryColumn || (catCols.filter(c => c !== xAxisColumn)[0] || '')}
+                    onChange={e => setSecondaryColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {catCols
+                      .filter(c => c !== xAxisColumn)
+                      .map(c => (
+                        <option key={c} value={c}>Aa {c}</option>
+                      ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Cell Metric Value
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                    <option value="">-- Count of Records --</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* WATERFALL CONFIGURATION */}
+            {chartType === 'waterfall' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Flow / Stage Dimension
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {columns.map(c => {
+                      const p = profiles[c];
+                      const typeIcon = p?.type === 'numeric' ? '#' : p?.type === 'datetime' ? '📅' : 'Aa';
+                      return (
+                        <option key={c} value={c}>{typeIcon} {c}</option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Variance Delta / Amount Metric
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Aggregation
+                  </label>
+                  <select
+                    value={aggregation}
+                    onChange={e => setAggregation(e.target.value as AggregationFunction)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* FUNNEL CONFIGURATION */}
+            {chartType === 'funnel' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Funnel Pipeline Stage (Dimension)
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {columns.map(c => {
+                      const p = profiles[c];
+                      const typeIcon = p?.type === 'numeric' ? '#' : p?.type === 'datetime' ? '📅' : 'Aa';
+                      return (
+                        <option key={c} value={c}>{typeIcon} {c}</option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Stage Throughput / Count Metric
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                    <option value="">-- Count of Records --</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* COMPOSITION CHARTS: PIE, DONUT, RADAR, POLAR_AREA, RADIAL_BAR, TREEMAP */}
+            {(chartType === 'pie' ||
+              chartType === 'donut' ||
+              chartType === 'radar' ||
+              chartType === 'polar_area' ||
+              chartType === 'radial_bar' ||
+              chartType === 'treemap') && (
               <div className="space-y-3">
                 <div>
                   <label className="text-[11px] font-semibold text-slate-300 block mb-1">
@@ -667,8 +1086,12 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
               </div>
             )}
 
-            {/* BAR / LINE / AREA CONFIGURATION */}
-            {(chartType === 'bar' || chartType === 'line' || chartType === 'area') && (
+            {/* BAR / HORIZONTAL_BAR / LINE / STEP_LINE / AREA CONFIGURATION */}
+            {(chartType === 'bar' ||
+              chartType === 'horizontal_bar' ||
+              chartType === 'line' ||
+              chartType === 'step_line' ||
+              chartType === 'area') && (
               <div className="space-y-3">
                 {/* X-Axis Slot */}
                 <div>
@@ -1116,11 +1539,41 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
                   </button>
                 )}
 
+                {editingViz && (
+                  <button
+                    onClick={() => {
+                      if (window.confirm(`Are you sure you want to delete "${editingViz.name}"? This will remove it from all dashboards and the Executive Dashboard.`)) {
+                        VisualizationEngine.deleteVisualization(editingViz.id);
+                        if (onOpenDashboard) onOpenDashboard();
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 text-rose-400 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer"
+                    title="Delete this chart permanently"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Chart</span>
+                  </button>
+                )}
+
                 {onOpenDashboard && (
                   <button
                     onClick={() => {
-                      handleSaveVisualization(false);
-                      if (onOpenDashboard) onOpenDashboard();
+                      const saved = handleSaveVisualization(false);
+                      if (saved) {
+                        const dashboards = VisualizationEngine.getCustomDashboards();
+                        let targetDash = dashboards[0];
+                        if (!targetDash) {
+                          targetDash = VisualizationEngine.createDashboard(
+                            'Executive & Analytics Dashboard',
+                            `Main dashboard for ${dataset.name}`
+                          );
+                        }
+                        VisualizationEngine.addVisualizationToDashboard(targetDash.id, saved.id, 'half');
+                        setSavedSuccessToast(`Added to "${targetDash.name}" & Executive Dashboard!`);
+                        setTimeout(() => {
+                          if (onOpenDashboard) onOpenDashboard();
+                        }, 500);
+                      }
                     }}
                     disabled={!computedResult.isValid}
                     className="px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"

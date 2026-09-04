@@ -310,13 +310,22 @@ export type ChartType =
   | 'horizontal_bar' 
   | 'line' 
   | 'area' 
+  | 'step_line'
   | 'scatter' 
+  | 'bubble'
   | 'histogram' 
   | 'box' 
   | 'pie' 
   | 'donut' 
-  | 'heatmap' 
   | 'radar'
+  | 'polar_area'
+  | 'waterfall'
+  | 'funnel'
+  | 'treemap'
+  | 'heatmap' 
+  | 'composed'
+  | 'gauge'
+  | 'radial_bar'
   | 'kpi';
 
 export interface BusinessKPI {
@@ -536,19 +545,28 @@ export type QueryIntentType =
   | 'CALCULATION'
   | 'PREDICTION'
   | 'REPORT'
-  | 'GENERAL_DATASET';
+  | 'GENERAL_DATASET'
+  | 'SCATTER';
 
 export interface StructuredAnalysisPlan {
   intent: QueryIntentType;
   primaryDimension?: string;
   secondaryDimension?: string;
   metricColumn?: string;
-  aggregation: 'SUM' | 'MEAN' | 'MEDIAN' | 'COUNT' | 'MIN' | 'MAX' | 'IQR' | 'CORRELATION' | 'PERCENTAGE' | 'DISTRIBUTION' | 'DIFFERENCE';
+  secondaryMetricColumn?: string;
+  aggregation: 'SUM' | 'MEAN' | 'MEDIAN' | 'COUNT' | 'MIN' | 'MAX' | 'IQR' | 'CORRELATION' | 'PERCENTAGE' | 'DISTRIBUTION' | 'DIFFERENCE' | 'SCATTER';
   filterCondition?: { column: string; operator: 'eq' | 'neq' | 'gt' | 'lt' | 'contains'; value: any };
   sortBy?: 'ASCENDING' | 'DESCENDING';
   limit?: number;
   visualizationType?: ChartType | 'none';
   reasoning: string;
+}
+
+export interface MindKnowledgeInsight {
+  inferredDimensions: string[];
+  suggestedCharts: { type: ChartType; label: string; prompt: string }[];
+  deepInsight: string;
+  actionPrompt?: string;
 }
 
 export interface ChatMessage {
@@ -572,6 +590,7 @@ export interface ChatMessage {
   plan?: StructuredAnalysisPlan;
   tableData?: { headers: string[]; rows: (string | number)[][] };
   suggestedFollowUps?: string[];
+  mindKnowledge?: MindKnowledgeInsight;
   isThinking?: boolean;
   intent?: QueryIntentType;
   executionTimeMs?: number;
