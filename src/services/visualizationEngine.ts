@@ -1480,12 +1480,10 @@ export class VisualizationEngine {
         localStorage.setItem(STORAGE_KEYS.EXECUTIVE_REMOVED, JSON.stringify(nextRemoved));
       }
 
-      // 2. Add to executive charts
-      const current = this.getExecutiveDashboardChartIds();
-      if (!current.includes(visualizationId)) {
-        current.push(visualizationId);
-        localStorage.setItem(STORAGE_KEYS.EXECUTIVE_CHARTS, JSON.stringify(current));
-      }
+      // 2. Add to executive charts (prioritize at front so it appears prominently)
+      const current = this.getExecutiveDashboardChartIds().filter(id => id !== visualizationId);
+      current.unshift(visualizationId);
+      localStorage.setItem(STORAGE_KEYS.EXECUTIVE_CHARTS, JSON.stringify(current));
 
       // 3. Dispatch reactive update event
       if (typeof window !== 'undefined') {
@@ -1494,6 +1492,11 @@ export class VisualizationEngine {
     } catch (e) {
       console.warn('Failed to add to executive dashboard:', e);
     }
+  }
+
+  public static isInExecutiveDashboard(visualizationId: string, datasetId?: string): boolean {
+    const list = this.getExecutiveDashboardVisualizations(datasetId);
+    return list.some(v => v.id === visualizationId);
   }
 
   public static removeFromExecutiveDashboard(visualizationId: string): void {

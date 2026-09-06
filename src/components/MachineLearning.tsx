@@ -22,6 +22,7 @@ import {
   Info
 } from 'lucide-react';
 import { DatasetState, MLModelResult, ModelComparisonItem } from '../types/dataset';
+import { desktopBridge } from '../services/desktopBridge';
 import {
   trainMachineLearningModel,
   assessMLReadiness,
@@ -240,14 +241,14 @@ export const MachineLearning: React.FC<MachineLearningProps> = ({ dataset, onNav
       p.prediction
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${dataset.name}_predictions_log.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    desktopBridge.exportFile({
+      defaultPath: `${dataset.name}_predictions_log.csv`,
+      title: 'Export Predictions Log CSV',
+      filters: [{ name: 'CSV Spreadsheets (*.csv)', extensions: ['csv'] }],
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
   };
 
   return (

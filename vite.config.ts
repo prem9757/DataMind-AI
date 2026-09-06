@@ -107,6 +107,7 @@ Return a valid JSON object matching this structure:
 
 export default defineConfig(() => {
   return {
+    base: './',
     plugins: [react(), tailwindcss(), geminiApiPlugin()],
     resolve: {
       alias: {

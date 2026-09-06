@@ -1555,6 +1555,22 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
                   </button>
                 )}
 
+                <button
+                  onClick={() => {
+                    const saved = handleSaveVisualization(false);
+                    if (saved) {
+                      VisualizationEngine.addToExecutiveDashboard(saved.id);
+                      setSavedSuccessToast(`Added "${saved.name}" to Executive Dashboard with automated summary & insights!`);
+                    }
+                  }}
+                  disabled={!computedResult.isValid}
+                  className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 shadow-md shadow-amber-500/20"
+                  title="Save and automatically add to Executive Dashboard with automated summary and strategic insights"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>Add to Executive Dashboard</span>
+                </button>
+
                 {onOpenDashboard && (
                   <button
                     onClick={() => {
@@ -1569,17 +1585,17 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
                           );
                         }
                         VisualizationEngine.addVisualizationToDashboard(targetDash.id, saved.id, 'half');
-                        setSavedSuccessToast(`Added to "${targetDash.name}" & Executive Dashboard!`);
+                        setSavedSuccessToast(`Added to "${targetDash.name}"!`);
                         setTimeout(() => {
                           if (onOpenDashboard) onOpenDashboard();
                         }, 500);
                       }
                     }}
                     disabled={!computedResult.isValid}
-                    className="px-4 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-300 font-bold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                    className="px-3.5 py-2 rounded-xl bg-[#181D26] hover:bg-[#202733] border border-[#2D3342] text-slate-300 font-semibold text-xs transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
                   >
-                    <LayoutDashboard className="w-4 h-4" />
-                    <span>Add to Dashboard</span>
+                    <LayoutDashboard className="w-4 h-4 text-amber-400" />
+                    <span>Custom Dashboards</span>
                   </button>
                 )}
               </div>

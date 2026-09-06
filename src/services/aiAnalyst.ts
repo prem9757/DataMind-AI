@@ -48,34 +48,45 @@ export async function askDataAnalyst(
   // 5. Try Server-Side Gemini synthesis for enhanced phrasing if online
   let geminiEnhanced: any = null;
   try {
-    const serverResponse = await fetch('/api/gemini/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        query,
-        datasetSummary: {
-          name: datasetName,
-          totalRows: rows.length,
-          columns: columns.map(c => ({
-            name: c,
-            type: profiles[c]?.type,
-            uniqueCount: profiles[c]?.uniqueCount,
-            min: profiles[c]?.min,
-            max: profiles[c]?.max,
-            mean: profiles[c]?.mean,
-            median: profiles[c]?.median,
-            sampleValues: profiles[c]?.sampleValues?.slice(0, 5)
-          }))
-        },
-        sampleRows: rows.slice(0, 10),
-        history: conversationHistory.slice(-4).map(m => ({ sender: m.sender, text: m.text }))
-      })
-    });
+    const payload = {
+      query,
+      datasetSummary: {
+        name: datasetName,
+        totalRows: rows.length,
+        columns: columns.map(c => ({
+          name: c,
+          type: profiles[c]?.type,
+          uniqueCount: profiles[c]?.uniqueCount,
+          min: profiles[c]?.min,
+          max: profiles[c]?.max,
+          mean: profiles[c]?.mean,
+          median: profiles[c]?.median,
+          sampleValues: profiles[c]?.sampleValues?.slice(0, 5)
+        }))
+      },
+      sampleRows: rows.slice(0, 10),
+      history: conversationHistory.slice(-4).map(m => ({ sender: m.sender, text: m.text }))
+    };
 
-    if (serverResponse.ok) {
-      const data = await serverResponse.json();
+    // If running inside desktop Electron shell, use secure IPC bridge
+    if (typeof window !== 'undefined' && window.electronAPI?.ai?.analyze) {
+      const data = await window.electronAPI.ai.analyze(payload);
       if (data && data.directAnswer && !data.error) {
         geminiEnhanced = data;
+      }
+    } else {
+      // Standard browser fetch
+      const serverResponse = await fetch('/api/gemini/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (serverResponse.ok) {
+        const data = await serverResponse.json();
+        if (data && data.directAnswer && !data.error) {
+          geminiEnhanced = data;
+        }
       }
     }
   } catch {

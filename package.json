@@ -1,14 +1,71 @@
 {
-  "name": "react-example",
+  "name": "smart-data-analysis-assistant",
+  "productName": "Smart Data Analysis Assistant",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Intelligent Data Analysis Assistant - Desktop Edition",
+  "author": "Smart Data Analytics",
   "type": "module",
+  "main": "dist-electron/main.cjs",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
     "build": "vite build",
+    "build:electron": "esbuild electron/main.ts electron/preload.ts --outdir=dist-electron --out-extension:.js=.cjs --platform=node --format=cjs --bundle --external:electron",
+    "desktop:dev": "npm run build:electron && electron .",
+    "desktop:build": "npm run build && npm run build:electron",
+    "desktop:pack": "npm run desktop:build && electron-builder --win",
+    "desktop:pack:dir": "npm run desktop:build && electron-builder --win --dir",
+    "electron:dev": "npm run desktop:dev",
+    "electron:build": "npm run desktop:build",
+    "electron:pack": "npm run desktop:pack",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
+    "clean": "rm -rf dist dist-electron release server.js",
     "lint": "tsc --noEmit"
+  },
+  "build": {
+    "appId": "com.smartdataanalysisassistant.app",
+    "productName": "Smart Data Analysis Assistant",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName} Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "Smart Data Analysis Assistant",
+      "uninstallDisplayName": "Smart Data Analysis Assistant",
+      "deleteAppDataOnUninstall": false,
+      "artifactName": "${productName} Setup.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}.${ext}"
+    }
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -33,6 +90,8 @@
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
     "autoprefixer": "^10.4.21",
+    "electron": "^44.2.0",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

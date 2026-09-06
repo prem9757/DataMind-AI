@@ -48,6 +48,7 @@ import {
   StructuredDashboardInsight
 } from '../types/visualization';
 import { VisualizationEngine } from '../services/visualizationEngine';
+import { desktopBridge } from '../services/desktopBridge';
 import { ChartViewer } from './ChartViewer';
 import { DateRangePreset } from '../types/temporal';
 
@@ -145,6 +146,34 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
     viz: SavedVisualization;
   } | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  // Track which visualizations are currently in Executive Dashboard
+  const [execVizIds, setExecVizIds] = useState<Set<string>>(() => {
+    const list = VisualizationEngine.getExecutiveDashboardVisualizations(dataset?.id);
+    return new Set(list.map(v => v.id));
+  });
+  const [execDashboardToast, setExecDashboardToast] = useState<{ text: string; vizName: string } | null>(null);
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      const list = VisualizationEngine.getExecutiveDashboardVisualizations(dataset?.id);
+      setExecVizIds(new Set(list.map(v => v.id)));
+    };
+    window.addEventListener('datamind_dashboard_updated', handleUpdate);
+    return () => window.removeEventListener('datamind_dashboard_updated', handleUpdate);
+  }, [dataset?.id]);
+
+  const handleAddToExecutiveDashboard = (viz: SavedVisualization) => {
+    VisualizationEngine.addToExecutiveDashboard(viz.id);
+    setExecVizIds(prev => new Set([...prev, viz.id]));
+    setExecDashboardToast({
+      text: `Added "${viz.name}" to Executive Dashboard with automated summary & strategic insights!`,
+      vizName: viz.name
+    });
+    setTimeout(() => {
+      setExecDashboardToast(null);
+    }, 5000);
+  };
 
   // Current Dashboard
   const currentDashboard = useMemo(() => {
@@ -574,7 +603,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
   }, [dataset]);
 
   // Export Dashboard JSON / HTML / Print
-  const handleExport = (format: 'json' | 'html' | 'print') => {
+  const handleExport = async (format: 'json' | 'html' | 'print') => {
     if (!currentDashboard) return;
 
     if (format === 'print') {
@@ -596,12 +625,14 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
           dataSummary: c.computed?.data?.slice(0, 20)
         }))
       };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${currentDashboard.name.toLowerCase().replace(/\s+/g, '_')}_data.json`;
-      a.click();
+      const cleanFilename = `${currentDashboard.name.toLowerCase().replace(/\s+/g, '_')}_data.json`;
+      await desktopBridge.exportFile({
+        defaultPath: cleanFilename,
+        title: 'Export Dashboard Configuration JSON',
+        filters: [{ name: 'JSON Data (*.json)', extensions: ['json'] }],
+        content: JSON.stringify(payload, null, 2),
+        mimeType: 'application/json'
+      });
       setShowExportModal(false);
       return;
     }
@@ -651,12 +682,14 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
         </body>
         </html>
       `;
-      const blob = new Blob([htmlContent], { type: 'text/html' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${currentDashboard.name.toLowerCase().replace(/\s+/g, '_')}_report.html`;
-      a.click();
+      const cleanFilename = `${currentDashboard.name.toLowerCase().replace(/\s+/g, '_')}_report.html`;
+      await desktopBridge.exportFile({
+        defaultPath: cleanFilename,
+        title: 'Export Dashboard HTML Report',
+        filters: [{ name: 'HTML Report (*.html)', extensions: ['html'] }],
+        content: htmlContent,
+        mimeType: 'text/html'
+      });
       setShowExportModal(false);
     }
   };
@@ -1457,6 +1490,23 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                         <MoveRight className="w-3.5 h-3.5" />
                       </button>
 
+                      {/* Add to Executive Dashboard */}
+                      <button
+                        onClick={() => handleAddToExecutiveDashboard(viz)}
+                        className={`p-1 rounded border transition cursor-pointer ${
+                          execVizIds.has(viz.id)
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                            : 'bg-[#181D26] hover:bg-amber-500/20 border-[#2D3342] text-amber-400 hover:text-amber-300'
+                        }`}
+                        title={
+                          execVizIds.has(viz.id)
+                            ? 'In Executive Dashboard with summary & insights'
+                            : 'Add to Executive Dashboard with automated summary & insights'
+                        }
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                      </button>
+
                       {/* Edit in Studio */}
                       <button
                         onClick={() => onEditVisualization(viz)}
@@ -1494,6 +1544,32 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
 
                     {!isEditMode && (
                       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition">
+                        {/* Direct One-Click Add to Executive Dashboard */}
+                        <button
+                          onClick={() => handleAddToExecutiveDashboard(viz)}
+                          className={`px-2 py-1 rounded-lg border text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer ${
+                            execVizIds.has(viz.id)
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                              : 'bg-[#181D26] hover:bg-amber-500/20 border-[#2B3242] text-amber-400 hover:text-amber-300'
+                          }`}
+                          title={
+                            execVizIds.has(viz.id)
+                              ? 'Active in Executive Dashboard with automated summary & insights'
+                              : 'Add to Executive Dashboard with automated summary & insights'
+                          }
+                        >
+                          {execVizIds.has(viz.id) ? (
+                            <>
+                              <Check className="w-3 h-3 text-emerald-400" />
+                              <span>In Exec Dashboard</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="w-3 h-3 text-amber-400" />
+                              <span>Add to Exec Dashboard</span>
+                            </>
+                          )}
+                        </button>
                         <button
                           onClick={() => handleAskAIForChart(viz, computed)}
                           className="px-2 py-1 rounded-lg bg-[#181D26] hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-[#2B3242] text-[11px] font-medium transition flex items-center gap-1 cursor-pointer"
@@ -1548,18 +1624,49 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                   />
                 </div>
 
-                {/* Subtle source indicator (view mode) */}
+                {/* Subtle source indicator & actions (view mode) */}
                 {!isEditMode && !isPresentationMode && (
                   <div className="mt-2.5 pt-2 border-t border-[#252A36] flex items-center justify-between text-[10px] text-slate-400">
-                    <span className="font-mono truncate">
-                      {viz.config.xAxisColumn} {viz.config.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
-                    </span>
-                    <button
-                      onClick={() => setDetailsViz(viz)}
-                      className="text-slate-400 hover:text-amber-400 transition"
-                    >
-                      Details
-                    </button>
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-mono truncate">
+                        {viz.config.xAxisColumn} {viz.config.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
+                      </span>
+                      {execVizIds.has(viz.id) && (
+                        <span className="inline-flex items-center gap-1 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                          <Sparkles className="w-2.5 h-2.5 text-emerald-400" />
+                          <span>Executive Dashboard</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleAddToExecutiveDashboard(viz)}
+                        className={`flex items-center gap-1 font-bold transition cursor-pointer text-[10px] ${
+                          execVizIds.has(viz.id)
+                            ? 'text-emerald-400 hover:text-emerald-300'
+                            : 'text-amber-400 hover:text-amber-300'
+                        }`}
+                        title={
+                          execVizIds.has(viz.id)
+                            ? 'Active in Executive Dashboard'
+                            : 'Add to Executive Dashboard with automated summary'
+                        }
+                      >
+                        {execVizIds.has(viz.id) ? (
+                          <Check className="w-3 h-3 text-emerald-400" />
+                        ) : (
+                          <Sparkles className="w-3 h-3 text-amber-400" />
+                        )}
+                        <span>{execVizIds.has(viz.id) ? 'In Executive' : 'Add to Executive'}</span>
+                      </button>
+                      <span className="text-slate-600">•</span>
+                      <button
+                        onClick={() => setDetailsViz(viz)}
+                        className="text-slate-400 hover:text-amber-400 transition"
+                      >
+                        Details
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1649,9 +1756,36 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                           </div>
                         </div>
 
-                        {isAlreadyIn && (
-                          <span className="text-[10px] text-slate-500 font-semibold uppercase">Already Added</span>
-                        )}
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleAddToExecutiveDashboard(viz);
+                            }}
+                            className={`px-2 py-1 rounded-lg border text-[10px] font-bold transition flex items-center gap-1 cursor-pointer ${
+                              execVizIds.has(viz.id)
+                                ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                                : 'bg-[#181D26] hover:bg-amber-500/20 border-[#2B3242] text-amber-400 hover:text-amber-300'
+                            }`}
+                            title="Add to Executive Dashboard with automated summary & insights"
+                          >
+                            {execVizIds.has(viz.id) ? (
+                              <>
+                                <Check className="w-3 h-3 text-emerald-400" />
+                                <span>In Exec</span>
+                              </>
+                            ) : (
+                              <>
+                                <Sparkles className="w-3 h-3 text-amber-400" />
+                                <span>+ Exec Dashboard</span>
+                              </>
+                            )}
+                          </button>
+                          {isAlreadyIn && (
+                            <span className="text-[10px] text-slate-500 font-semibold uppercase">Already Added</span>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1999,20 +2133,43 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
               })()}
             </div>
 
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#252A36]">
-              <button
-                onClick={() => {
-                  const target = inspectingViz;
-                  setInspectingViz(null);
-                  onEditVisualization(target);
-                }}
-                className="px-4 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs hover:bg-amber-400"
-              >
-                Edit in Builder
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#252A36]">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => handleAddToExecutiveDashboard(inspectingViz)}
+                  className={`px-3.5 py-1.5 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer ${
+                    execVizIds.has(inspectingViz.id)
+                      ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                      : 'bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-md shadow-amber-500/20'
+                  }`}
+                >
+                  {execVizIds.has(inspectingViz.id) ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>In Executive Dashboard</span>
+                    </>
+                  ) : (
+                    <>
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>Add to Executive Dashboard</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  onClick={() => {
+                    const target = inspectingViz;
+                    setInspectingViz(null);
+                    onEditVisualization(target);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-[#181D26] hover:bg-[#202733] border border-[#2D3342] text-slate-200 text-xs font-semibold cursor-pointer"
+                >
+                  Edit in Builder
+                </button>
+              </div>
+
               <button
                 onClick={() => setInspectingViz(null)}
-                className="px-4 py-1.5 rounded-xl bg-[#181D26] text-slate-300 text-xs font-semibold hover:bg-[#202733]"
+                className="px-4 py-1.5 rounded-xl bg-[#181D26] text-slate-300 text-xs font-semibold hover:bg-[#202733] cursor-pointer"
               >
                 Close
               </button>
@@ -2073,10 +2230,32 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-3 border-t border-[#252A36]">
+            <div className="flex items-center justify-between pt-3 border-t border-[#252A36]">
+              <button
+                onClick={() => {
+                  handleAddToExecutiveDashboard(detailsViz);
+                }}
+                className={`px-3.5 py-1.5 rounded-xl border text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                  execVizIds.has(detailsViz.id)
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                    : 'bg-amber-500 text-slate-950 hover:bg-amber-400'
+                }`}
+              >
+                {execVizIds.has(detailsViz.id) ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>In Executive Dashboard</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Add to Executive Dashboard</span>
+                  </>
+                )}
+              </button>
               <button
                 onClick={() => setDetailsViz(null)}
-                className="px-4 py-1.5 rounded-xl bg-amber-500 text-slate-950 font-bold text-xs"
+                className="px-4 py-1.5 rounded-xl bg-[#181D26] hover:bg-[#202733] text-slate-200 border border-[#2D3342] font-semibold text-xs cursor-pointer"
               >
                 Done
               </button>
@@ -2361,6 +2540,37 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
           <button
             onClick={() => setToastMessage(null)}
             className="p-0.5 rounded text-slate-400 hover:text-slate-200 ml-2"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* EXECUTIVE DASHBOARD TOAST NOTIFICATION */}
+      {execDashboardToast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-[#12151C] border border-amber-500/40 rounded-2xl p-4 shadow-2xl flex items-center gap-3 text-xs animate-in fade-in slide-in-from-bottom-2 duration-300 max-w-md">
+          <div className="p-2 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0">
+            <Sparkles className="w-4 h-4" />
+          </div>
+          <div className="flex-1">
+            <div className="font-bold text-slate-100">Executive Dashboard Updated</div>
+            <div className="text-slate-300 text-[11px] mt-0.5">{execDashboardToast.text}</div>
+          </div>
+          {onNavigate && (
+            <button
+              onClick={() => {
+                setExecDashboardToast(null);
+                onNavigate('dashboard');
+              }}
+              className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs flex items-center gap-1 shrink-0 transition cursor-pointer"
+            >
+              <span>View</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          )}
+          <button
+            onClick={() => setExecDashboardToast(null)}
+            className="p-1 rounded-lg text-slate-400 hover:text-slate-200 cursor-pointer"
           >
             <X className="w-3.5 h-3.5" />
           </button>

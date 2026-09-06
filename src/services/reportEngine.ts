@@ -13,6 +13,7 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { computeDetailedDescriptiveStats } from './statsEngine';
 import { computeTimeSeriesTrend, computeGroupSummary, computeCorrelationMatrix } from './edaEngine';
+import { desktopBridge } from './desktopBridge';
 
 export const DEFAULT_REPORT_CONFIG: ReportConfig = {
   id: 'cfg-default',
@@ -592,7 +593,7 @@ export function exportComprehensiveExcelWorkbook(
   XLSX.utils.book_append_sheet(workbook, cleanedSheet, 'Cleaned_Dataset');
 
   const cleanFilename = `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Analysis_Workbook.xlsx`;
-  XLSX.writeFile(workbook, cleanFilename);
+  desktopBridge.exportWorkbook(workbook, cleanFilename);
 }
 
 /**
@@ -759,14 +760,14 @@ export function exportReportToHTML(report: ExecutiveReport, filename: string) {
 </body>
 </html>`;
 
-  const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Report.html`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  const cleanFilename = `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Report.html`;
+  desktopBridge.exportFile({
+    defaultPath: cleanFilename,
+    title: 'Export Executive HTML Report',
+    filters: [{ name: 'HTML Report (*.html)', extensions: ['html'] }],
+    content: htmlContent,
+    mimeType: 'text/html;charset=utf-8;'
+  });
 }
 
 /**
@@ -809,7 +810,15 @@ export async function exportReportToPDF(
     }
 
     const cleanFilename = `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Executive_Report.pdf`;
-    pdf.save(cleanFilename);
+    if (desktopBridge.isElectron()) {
+      const pdfBlob = pdf.output('blob');
+      await desktopBridge.exportBlob(pdfBlob, cleanFilename, [
+        { name: 'PDF Documents (*.pdf)', extensions: ['pdf'] },
+        { name: 'All Files (*.*)', extensions: ['*'] }
+      ]);
+    } else {
+      pdf.save(cleanFilename);
+    }
   } catch (error) {
     console.error('PDF generation error:', error);
   }
@@ -828,35 +837,49 @@ export async function exportChartAsPNG(chartElementId: string, filename: string)
       useCORS: true,
       backgroundColor: '#12151C'
     });
-    const link = document.createElement('a');
-    link.download = `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Chart.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    const cleanFilename = `${filename.replace(/[^a-zA-Z0-9_-]/g, '_')}_Chart.png`;
+    if (desktopBridge.isElectron()) {
+      const b64 = canvas.toDataURL('image/png').split(',')[1];
+      await desktopBridge.exportFile({
+        defaultPath: cleanFilename,
+        title: 'Export Chart PNG',
+        filters: [{ name: 'PNG Image (*.png)', extensions: ['png'] }],
+        content: b64,
+        isBase64: true,
+        mimeType: 'image/png'
+      });
+    } else {
+      const link = document.createElement('a');
+      link.download = cleanFilename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+    }
   } catch (err) {
     console.error('Chart export error:', err);
   }
 }
 
-export function exportDatasetToCSV(rows: Record<string, any>[], filename: string) {
+export async function exportDatasetToCSV(rows: Record<string, any>[], filename: string) {
   if (!rows || rows.length === 0) return;
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const csvOutput = XLSX.utils.sheet_to_csv(worksheet);
+  const cleanFilename = `${filename.replace(/\.[^/.]+$/, '')}_cleaned.csv`;
 
-  const blob = new Blob([csvOutput], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.setAttribute('href', url);
-  link.setAttribute('download', `${filename.replace(/\.[^/.]+$/, '')}_cleaned.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
+  await desktopBridge.exportFile({
+    defaultPath: cleanFilename,
+    title: 'Save Cleaned Dataset CSV',
+    filters: [{ name: 'CSV Spreadsheets (*.csv)', extensions: ['csv'] }],
+    content: csvOutput,
+    mimeType: 'text/csv;charset=utf-8;'
+  });
 }
 
-export function exportDatasetToExcel(rows: Record<string, any>[], filename: string) {
+export async function exportDatasetToExcel(rows: Record<string, any>[], filename: string) {
   if (!rows || rows.length === 0) return;
   const worksheet = XLSX.utils.json_to_sheet(rows);
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, worksheet, 'Cleaned Data');
-  XLSX.writeFile(workbook, `${filename.replace(/\.[^/.]+$/, '')}_cleaned.xlsx`);
+  const cleanFilename = `${filename.replace(/\.[^/.]+$/, '')}_cleaned.xlsx`;
+  await desktopBridge.exportWorkbook(workbook, cleanFilename);
 }
 

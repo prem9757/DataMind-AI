@@ -18,6 +18,7 @@ import {
   Scale
 } from 'lucide-react';
 import { DatasetState, StatisticalTestResult, DetailedDescriptiveStats } from '../types/dataset';
+import { desktopBridge } from '../services/desktopBridge';
 import {
   computeDetailedDescriptiveStats,
   runTwoSampleTTest,
@@ -203,14 +204,14 @@ export const StatisticalAnalysis: React.FC<StatisticalAnalysisProps> = ({ datase
       s.ci95[1]
     ]);
 
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `${dataset.name}_descriptive_statistics.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+    desktopBridge.exportFile({
+      defaultPath: `${dataset.name}_descriptive_statistics.csv`,
+      title: 'Export Descriptive Statistics CSV',
+      filters: [{ name: 'CSV Spreadsheets (*.csv)', extensions: ['csv'] }],
+      content: csvContent,
+      mimeType: 'text/csv;charset=utf-8;'
+    });
   };
 
   return (

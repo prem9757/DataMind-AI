@@ -1,6 +1,7 @@
 import React from 'react';
 import { AgentInvestigation } from '../types/agent';
 import { FileText, Download, Check, X, ShieldCheck, Layers, Target, BrainCircuit } from 'lucide-react';
+import { desktopBridge } from '../services/desktopBridge';
 
 interface InvestigationReportModalProps {
   investigation: AgentInvestigation;
@@ -37,13 +38,14 @@ export const InvestigationReportModal: React.FC<InvestigationReportModalProps> =
       md += `- ${l}\n`;
     });
 
-    const blob = new Blob([md], { type: 'text/markdown' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `investigation-report-${investigation.id}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const cleanFilename = `investigation-report-${investigation.id}.md`;
+    desktopBridge.exportFile({
+      defaultPath: cleanFilename,
+      title: 'Save Investigation Briefing Markdown',
+      filters: [{ name: 'Markdown Document (*.md)', extensions: ['md'] }],
+      content: md,
+      mimeType: 'text/markdown;charset=utf-8;'
+    });
   };
 
   return (

@@ -209,3 +209,110 @@ export function parseRawArray(data: Record<string, any>[], name: string): ParseR
     totalColumns: columns.length
   };
 }
+
+/**
+ * Parses raw dataset content from local desktop files (UTF-8 string or base64)
+ */
+export async function parseRawDatasetContent(input: {
+  fileName: string;
+  fileSize: number;
+  fileType: string;
+  content: string;
+  isBase64?: boolean;
+}): Promise<ParseResult> {
+  const ext = input.fileName.split('.').pop()?.toLowerCase() || '';
+
+  if (ext === 'csv' || ext === 'tsv' || ext === 'txt' || (!input.isBase64 && ext !== 'xlsx' && ext !== 'xls' && ext !== 'json')) {
+    return new Promise((resolve, reject) => {
+      Papa.parse(input.content, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: 'greedy',
+        transformHeader: (header: string) => header.trim(),
+        complete: (results) => {
+          if (!results.data || results.data.length === 0) {
+            reject(new Error('The CSV dataset is empty or could not be parsed.'));
+            return;
+          }
+          const rawRows = results.data as Record<string, any>[];
+          const rows = rawRows.filter(row => Object.values(row).some(v => v !== null && v !== undefined && String(v).trim() !== ''));
+          if (rows.length === 0) {
+            reject(new Error('No valid data rows found in the CSV dataset.'));
+            return;
+          }
+          const columns = Object.keys(rows[0]).filter(col => col.trim() !== '');
+          resolve({
+            fileName: input.fileName,
+            fileSize: input.fileSize,
+            fileType: 'CSV',
+            columns,
+            rows,
+            totalRows: rows.length,
+            totalColumns: columns.length,
+            encoding: 'UTF-8'
+          });
+        },
+        error: (err) => reject(new Error(`Failed to parse CSV dataset: ${err.message}`))
+      });
+    });
+  }
+
+  if (ext === 'json') {
+    try {
+      const parsed = JSON.parse(input.content);
+      const arrayData = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.data) ? parsed.data : [parsed]);
+      return parseRawArray(arrayData, input.fileName);
+    } catch (err: any) {
+      throw new Error(`Failed to parse JSON dataset: ${err.message}`);
+    }
+  }
+
+  if (ext === 'xlsx' || ext === 'xls' || input.isBase64) {
+    const workbook = XLSX.read(input.content, { type: 'base64', cellDates: true });
+    const sheetNames = workbook.SheetNames;
+    if (!sheetNames || sheetNames.length === 0) {
+      throw new Error('The Excel workbook contains no sheets.');
+    }
+    const selectedSheet = sheetNames[0];
+    const worksheet = workbook.Sheets[selectedSheet];
+    const rawRows: Record<string, any>[] = XLSX.utils.sheet_to_json(worksheet, {
+      raw: false,
+      dateNF: 'yyyy-mm-dd'
+    });
+    if (!rawRows || rawRows.length === 0) {
+      throw new Error(`Sheet "${selectedSheet}" is empty or has no recognizable table data.`);
+    }
+    const rows = rawRows.map(row => {
+      const formatted: Record<string, any> = {};
+      for (const [key, val] of Object.entries(row)) {
+        const cleanKey = key.trim();
+        if (!cleanKey) continue;
+        if (typeof val === 'string') {
+          const trimmed = val.trim();
+          if (trimmed !== '' && !isNaN(Number(trimmed)) && !trimmed.startsWith('0') && trimmed.length < 15) {
+            formatted[cleanKey] = Number(trimmed);
+          } else {
+            formatted[cleanKey] = trimmed;
+          }
+        } else {
+          formatted[cleanKey] = val;
+        }
+      }
+      return formatted;
+    });
+    const columns = Object.keys(rows[0] || {}).filter(c => c.trim() !== '');
+    return {
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+      fileType: 'Excel',
+      sheetNames,
+      selectedSheet,
+      columns,
+      rows,
+      totalRows: rows.length,
+      totalColumns: columns.length
+    };
+  }
+
+  throw new Error(`Unsupported dataset format .${ext}. Please open a CSV, XLSX, XLS, or JSON dataset.`);
+}

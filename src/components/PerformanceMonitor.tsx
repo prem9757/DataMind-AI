@@ -17,10 +17,13 @@ import { ObservabilityMetrics, SystemHealthStatus, BenchmarkResult, TestSuiteRes
 import { globalObservability } from '../services/observability';
 import { runDatasetBenchmark } from '../services/benchmarkSuite';
 import { runAutomatedTestSuite } from '../services/testSuite';
+import { desktopBridge } from '../services/desktopBridge';
+import { SystemInfo } from '../types/electron';
 
 export function PerformanceMonitor() {
   const [metrics, setMetrics] = useState<ObservabilityMetrics | null>(null);
   const [health, setHealth] = useState<SystemHealthStatus | null>(null);
+  const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [benchResults, setBenchResults] = useState<BenchmarkResult[]>([]);
   const [benchLoading, setBenchLoading] = useState(false);
   const [benchStep, setBenchStep] = useState('');
@@ -28,6 +31,7 @@ export function PerformanceMonitor() {
 
   const [testResult, setTestResult] = useState<TestSuiteResult | null>(null);
   const [testingLoading, setTestingLoading] = useState(false);
+  const isDesktop = desktopBridge.isElectron();
 
   useEffect(() => {
     refreshDiagnostics();
@@ -39,6 +43,8 @@ export function PerformanceMonitor() {
     setMetrics(globalObservability.getMetrics());
     const h = await globalObservability.runSystemHealthCheck();
     setHealth(h);
+    const sys = await desktopBridge.getSystemInfo();
+    setSystemInfo(sys);
   };
 
   const handleRunBenchmark = async (size: '100K' | '500K' | '1M') => {
@@ -143,8 +149,44 @@ export function PerformanceMonitor() {
         <div className="bg-[#0F1218] border border-[#252A36] rounded-2xl p-4 space-y-1">
           <span className="text-[10px] uppercase font-mono font-bold text-slate-400">Memory Estimate</span>
           <p className="text-xl font-bold text-slate-100 font-mono">{metrics.memoryEstimateMB} MB</p>
-          <p className="text-[11px] text-slate-500">In-browser heap buffers</p>
+          <p className="text-[11px] text-slate-500">In-process heap buffers</p>
         </div>
+      </div>
+
+      {/* Host Environment Card */}
+      <div className="bg-[#0F1218] border border-[#252A36] rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            <HardDrive className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-slate-200">
+                {isDesktop ? 'Electron Desktop Environment' : 'Browser Web Environment'}
+              </span>
+              <span className="text-[10px] px-2 py-0.5 rounded-full font-mono font-bold uppercase bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                {isDesktop ? 'Desktop Host' : 'Web Runtime'}
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-400 mt-0.5">
+              {systemInfo ? `${systemInfo.platform} • ${systemInfo.arch} • ${systemInfo.cpuModel} (${systemInfo.cpuCores} CPU Cores)` : 'Host metrics initializing...'}
+            </p>
+          </div>
+        </div>
+
+        {systemInfo && (
+          <div className="flex items-center gap-4 text-xs font-mono text-slate-300">
+            <div>
+              <span className="text-slate-500 text-[10px] uppercase block">Host Memory</span>
+              <span className="font-bold text-slate-200">{systemInfo.totalMemoryGB} GB Total</span>
+            </div>
+            <div className="h-6 w-px bg-[#252A36]" />
+            <div>
+              <span className="text-slate-500 text-[10px] uppercase block">Available RAM</span>
+              <span className="font-bold text-emerald-400">{systemInfo.freeMemoryGB} GB Free</span>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Subsystem Health Checklist */}

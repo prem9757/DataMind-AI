@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 import { ChartType } from '../types/dataset';
 import { VisualizationEngine } from '../services/visualizationEngine';
+import { desktopBridge } from '../services/desktopBridge';
 
 export interface ChartViewerProps {
   type: ChartType;
@@ -208,14 +209,14 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
     const svgElem = containerRef.current?.querySelector('svg');
     if (!svgElem) return;
     const svgData = new XMLSerializer().serializeToString(svgElem);
-    const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-    const downloadLink = document.createElement('a');
-    downloadLink.href = svgUrl;
-    downloadLink.download = `${title.toLowerCase().replace(/[\s/\\-]+/g, '_')}_chart.svg`;
-    document.body.appendChild(downloadLink);
-    downloadLink.click();
-    document.body.removeChild(downloadLink);
+    const cleanFilename = `${title.toLowerCase().replace(/[\s/\\-]+/g, '_')}_chart.svg`;
+    desktopBridge.exportFile({
+      defaultPath: cleanFilename,
+      title: 'Export Vector SVG Chart',
+      filters: [{ name: 'SVG Vector Graphic (*.svg)', extensions: ['svg'] }],
+      content: svgData,
+      mimeType: 'image/svg+xml;charset=utf-8'
+    });
   };
 
   const handleSaveToDashboard = () => {

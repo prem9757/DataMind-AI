@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { DatasetState } from '../types/dataset';
 import { SessionManager, AppSettings } from '../services/sessionManager';
+import { desktopBridge } from '../services/desktopBridge';
 
 interface SettingsProps {
   dataset: DatasetState | null;
@@ -48,14 +49,14 @@ export function Settings({ dataset, onResetWorkspace, onNavigateToSection }: Set
 
   const exportSessionJson = () => {
     if (!dataset) return;
-    const blob = new Blob([JSON.stringify(dataset, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${dataset.name.toLowerCase().replace(/\s+/g, '_')}_workspace_state.json`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    const cleanFilename = `${dataset.name.toLowerCase().replace(/\s+/g, '_')}_workspace_state.json`;
+    desktopBridge.exportFile({
+      defaultPath: cleanFilename,
+      title: 'Export Workspace State JSON',
+      filters: [{ name: 'JSON Workspace State (*.json)', extensions: ['json'] }],
+      content: JSON.stringify(dataset, null, 2),
+      mimeType: 'application/json'
+    });
   };
 
   return (

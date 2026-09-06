@@ -133,6 +133,7 @@ export const Visualizations: React.FC<VisualizationsProps> = ({
           onEditVisualization={handleEditVisualization}
           onCreateNewVisualization={handleCreateNew}
           onNavigateToDashboard={() => setActiveTab('custom_dashboards')}
+          onNavigateToExecutiveDashboard={handleOpenExecutiveDashboard}
         />
       )}
 

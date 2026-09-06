@@ -10,7 +10,8 @@ import {
   Database,
   Sliders,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Monitor
 } from 'lucide-react';
 import { parseFile } from '../services/dataParser';
 import { profileDataset } from '../services/profiler';
@@ -18,6 +19,7 @@ import { auditDataQuality } from '../services/qualityEngine';
 import { generateDatasetInsights } from '../services/insightEngine';
 import { DatasetState } from '../types/dataset';
 import { SAMPLE_DATASETS } from '../services/sampleData';
+import { desktopBridge } from '../services/desktopBridge';
 
 interface DataUploadProps {
   onDatasetLoaded: (dataset: DatasetState) => void;
@@ -45,6 +47,38 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
   const [customDelimiter, setCustomDelimiter] = useState<string>('auto');
   const [skipHeaderRows, setSkipHeaderRows] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isDesktop = desktopBridge.isElectron();
+
+  const handleChooseFile = async () => {
+    if (isLoading) return;
+    if (isDesktop) {
+      try {
+        setErrorMessage(null);
+        setSuccessData(null);
+        const res = await desktopBridge.openDataset();
+        if (res.canceled) return;
+        if (res.error) {
+          setErrorMessage(res.error);
+          return;
+        }
+        if (res.result) {
+          await processAndSetDataset(
+            res.result.fileName.replace(/\.[^/.]+$/, ''),
+            res.result.fileName,
+            res.result.fileSize,
+            res.result.fileType,
+            res.result.columns,
+            res.result.rows
+          );
+        }
+      } catch (err: any) {
+        setErrorMessage(err.message || 'Failed to open desktop dataset.');
+        setUploadStep('idle');
+      }
+    } else {
+      fileInputRef.current?.click();
+    }
+  };
 
   const processAndSetDataset = async (
     name: string,
@@ -160,7 +194,7 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
         }}
         onDragLeave={() => setIsDragging(false)}
         onDrop={handleDrop}
-        onClick={() => !isLoading && fileInputRef.current?.click()}
+        onClick={handleChooseFile}
         className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer relative overflow-hidden ${
           isDragging
             ? 'border-amber-400 bg-amber-500/10'
@@ -193,12 +227,23 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
         <div className="flex items-center justify-center gap-3 mt-4">
           <button
             type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              handleChooseFile();
+            }}
             className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2 mx-auto"
           >
             <UploadCloud className="w-4 h-4" />
-            <span>Upload Data</span>
+            <span>{isDesktop ? 'Open Dataset (Native Dialog)' : 'Upload Data'}</span>
           </button>
         </div>
+
+        {isDesktop && (
+          <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-amber-400/80 font-mono">
+            <Monitor className="w-3.5 h-3.5 text-amber-400" />
+            <span>Desktop Host Mode: Direct local filesystem access active</span>
+          </div>
+        )}
 
         {isLoading && (
           <div className="absolute inset-0 bg-[#0B0D11]/90 backdrop-blur-sm flex flex-col items-center justify-center z-20 space-y-3">
