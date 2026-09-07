@@ -15,6 +15,7 @@
     "desktop:build": "npm run build && npm run build:electron",
     "desktop:pack": "npm run desktop:build && electron-builder --win",
     "desktop:pack:dir": "npm run desktop:build && electron-builder --win --dir",
+    "desktop:dist": "npm run desktop:build && electron-builder --win",
     "electron:dev": "npm run desktop:dev",
     "electron:build": "npm run desktop:build",
     "electron:pack": "npm run desktop:pack",
@@ -32,6 +33,7 @@
     "files": [
       "dist/**/*",
       "dist-electron/**/*",
+      "build/**/*",
       "package.json"
     ],
     "win": {
@@ -50,7 +52,7 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "${productName} Setup.${ext}"
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "nsis": {
       "oneClick": false,
@@ -61,10 +63,10 @@
       "shortcutName": "Smart Data Analysis Assistant",
       "uninstallDisplayName": "Smart Data Analysis Assistant",
       "deleteAppDataOnUninstall": false,
-      "artifactName": "${productName} Setup.${ext}"
+      "artifactName": "${productName} Setup ${version}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}.${ext}"
+      "artifactName": "${productName} ${version}.${ext}"
     }
   },
   "dependencies": {
