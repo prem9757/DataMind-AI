@@ -1,6 +1,27 @@
 # Smart Data Analysis Assistant — Autonomous Data Analysis & Machine Learning Workbench
 
-**Smart Data Analysis Assistant** is an enterprise-grade, browser-native exploratory data analysis, statistical computing, machine learning, and executive reporting suite powered by server-side Gemini intelligence and deterministic Python/TypeScript numerical engines.
+**Smart Data Analysis Assistant** is an enterprise-grade, desktop-native and browser-ready exploratory data analysis, statistical computing, machine learning, and executive reporting suite powered by server-side Gemini intelligence and deterministic Python/TypeScript numerical engines.
+
+---
+
+## 🚀 Production Release Overview (v1.0.0)
+
+- **Application Name**: Smart Data Analysis Assistant
+- **Version**: `1.0.0`
+- **Platform**: Windows x64 Desktop & Web
+- **Release Type**: Production Release
+- **Core Capabilities**:
+  - **Universal Data Ingestion**: High-throughput parsing for CSV, TSV, XLSX, XLS, JSON, and text datasets.
+  - **Data Quality & Audit Engine**: 0–100 data quality scoring with automated missing, duplicate, and schema validation.
+  - **Data Cleaning Workbench**: Interactive, non-destructive cleaning pipeline with one-click imputation, outlier handling, and full rollback.
+  - **Exploratory Data Analysis (EDA)**: Automated distribution analysis, correlation matrices, and numerical moment profiling.
+  - **Visualization Studio**: 11 rich chart types with interactive aggregations, sorting, and field mappings.
+  - **Executive Dashboard**: Drag-and-drop dashboard grid with global slicers, filters, and state persistence.
+  - **Conversational AI Analyst & Autonomous Investigator**: Natural language data query execution and automated root-cause business objective investigations.
+  - **Statistical Testing & Machine Learning**: Welch's $t$-test, ANOVA, Chi-Square, Linear/Logistic regression, and $K$-Means clustering.
+  - **Multi-Format Reports & Native Export**: Professional reports exported to CSV, Excel, HTML, SVG, and PDF.
+  - **Enterprise Connection Vault**: AES-256 encrypted storage for database (PostgreSQL, MySQL, SQL Server) and REST/OData connections.
+  - **Strict Security Posture**: Enforced Electron context isolation (`contextIsolation: true`, `nodeIntegration: false`, `sandbox: true`).
 
 ---
 

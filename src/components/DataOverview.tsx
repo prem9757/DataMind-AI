@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useDeferredValue } from 'react';
 import {
   Search,
   TableProperties,
@@ -67,24 +67,29 @@ export const DataOverview: React.FC<DataOverviewProps> = ({
     }
   });
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const deferredRecordFilter = useDeferredValue(recordFilter);
+  const deferredSortColumn = useDeferredValue(sortColumn);
+  const deferredSortDirection = useDeferredValue(sortDirection);
+
   // Filter rows based on search & record filter mode
   const filteredRows = activeRows.filter((row, idx) => {
     // 1. Search Query
-    if (searchQuery) {
+    if (deferredSearchQuery) {
       const matchesSearch = Object.values(row).some(val =>
-        String(val ?? '').toLowerCase().includes(searchQuery.toLowerCase())
+        String(val ?? '').toLowerCase().includes(deferredSearchQuery.toLowerCase())
       );
       if (!matchesSearch) return false;
     }
 
     // 2. Special Quality Records Filter
-    if (recordFilter === 'missing') {
+    if (deferredRecordFilter === 'missing') {
       return Object.values(row).some(v => v === null || v === undefined || v === '' || (typeof v === 'number' && isNaN(v)));
     }
-    if (recordFilter === 'duplicates') {
+    if (deferredRecordFilter === 'duplicates') {
       return duplicateRowIndices.has(idx);
     }
-    if (recordFilter === 'outliers') {
+    if (deferredRecordFilter === 'outliers') {
       for (const col of columns) {
         const prof = profiles[col];
         if (prof && prof.type === 'numeric' && prof.q1 !== undefined && prof.iqr !== undefined) {
@@ -104,16 +109,16 @@ export const DataOverview: React.FC<DataOverviewProps> = ({
 
   // Sort rows
   const sortedRows = [...filteredRows].sort((a, b) => {
-    if (!sortColumn) return 0;
-    const vA = a[sortColumn];
-    const vB = b[sortColumn];
+    if (!deferredSortColumn) return 0;
+    const vA = a[deferredSortColumn];
+    const vB = b[deferredSortColumn];
     if (vA === vB) return 0;
     if (vA === null || vA === undefined) return 1;
     if (vB === null || vB === undefined) return -1;
     if (typeof vA === 'number' && typeof vB === 'number') {
-      return sortDirection === 'asc' ? vA - vB : vB - vA;
+      return deferredSortDirection === 'asc' ? vA - vB : vB - vA;
     }
-    return sortDirection === 'asc'
+    return deferredSortDirection === 'asc'
       ? String(vA).localeCompare(String(vB))
       : String(vB).localeCompare(String(vA));
   });

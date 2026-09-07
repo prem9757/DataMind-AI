@@ -1,17 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
-  UploadCloud,
-  FileSpreadsheet,
-  FileText,
-  FileType,
-  CheckCircle2,
-  AlertCircle,
-  ArrowRight,
-  Database,
-  Sliders,
-  ChevronDown,
-  ChevronUp,
-  Monitor
+  UploadCloud, FileSpreadsheet, FileText, FileType, CheckCircle2,
+  AlertCircle, ArrowRight, Database, Sliders, ChevronDown, ChevronUp,
+  Monitor, Cloud, Globe, Briefcase, Play
 } from 'lucide-react';
 import { parseFile } from '../services/dataParser';
 import { profileDataset } from '../services/profiler';
@@ -21,134 +12,181 @@ import { DatasetState } from '../types/dataset';
 import { SAMPLE_DATASETS } from '../services/sampleData';
 import { desktopBridge } from '../services/desktopBridge';
 
+import { globalConnectorRegistry, ConnectorCategory, Connector } from '../connectors';
+
 interface DataUploadProps {
   onDatasetLoaded: (dataset: DatasetState) => void;
   onNavigate?: (section: any) => void;
   onLoadSample?: (sampleId: string) => void;
 }
 
-type UploadStep = 'idle' | 'uploading' | 'validating' | 'creating' | 'ready';
-
-interface UploadSuccessData {
-  name: string;
-  fileName: string;
-  rows: number;
-  columns: number;
-  status: string;
-  qualityScore: number;
-}
+type Step = 'category' | 'connector' | 'configure' | 'preview' | 'importing' | 'ready';
 
 export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavigate, onLoadSample }) => {
-  const [isDragging, setIsDragging] = useState(false);
-  const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
+  const [step, setStep] = useState<Step>('category');
+  const [selectedCategory, setSelectedCategory] = useState<ConnectorCategory | null>(null);
+  const [selectedConnector, setSelectedConnector] = useState<Connector | null>(null);
+  
+  const [configValues, setConfigValues] = useState<Record<string, any>>({});
+  const [testStatus, setTestStatus] = useState<{status: string, message?: string} | null>(null);
+  const [previewData, setPreviewData] = useState<any | null>(null);
+  
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successData, setSuccessData] = useState<UploadSuccessData | null>(null);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [customDelimiter, setCustomDelimiter] = useState<string>('auto');
-  const [skipHeaderRows, setSkipHeaderRows] = useState<number>(0);
+  const [successData, setSuccessData] = useState<any | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isDesktop = desktopBridge.isElectron();
 
-  const handleChooseFile = async () => {
-    if (isLoading) return;
-    if (isDesktop) {
-      try {
-        setErrorMessage(null);
-        setSuccessData(null);
-        const res = await desktopBridge.openDataset();
-        if (res.canceled) return;
-        if (res.error) {
-          setErrorMessage(res.error);
-          return;
-        }
-        if (res.result) {
-          await processAndSetDataset(
-            res.result.fileName.replace(/\.[^/.]+$/, ''),
-            res.result.fileName,
-            res.result.fileSize,
-            res.result.fileType,
-            res.result.columns,
-            res.result.rows
-          );
-        }
-      } catch (err: any) {
-        setErrorMessage(err.message || 'Failed to open desktop dataset.');
-        setUploadStep('idle');
-      }
-    } else {
-      fileInputRef.current?.click();
-    }
-  };
-
-  const processAndSetDataset = async (
-    name: string,
-    fileName: string,
-    fileSize: number,
-    fileType: string,
-    columns: string[],
-    rows: Record<string, any>[]
-  ) => {
+  const handleSaveConnection = async () => {
+    if (!selectedConnector) return;
     try {
-      setUploadStep('uploading');
-      await new Promise(r => setTimeout(r, 150));
-
-      setUploadStep('validating');
-      if (!rows || rows.length === 0 || !columns || columns.length === 0) {
-        throw new Error('Dataset is empty or contains no readable columns/rows.');
-      }
-      await new Promise(r => setTimeout(r, 150));
-
-      setUploadStep('creating');
-      const profiles = profileDataset(rows, columns);
-      const quality = auditDataQuality(rows, columns, profiles);
-      const { insights, recommendations, suggestedQuestions } = generateDatasetInsights(rows, columns, profiles);
-
-      const datasetState: DatasetState = {
-        id: `ds-${Date.now()}`,
-        name,
-        fileName,
-        fileSize,
-        fileType,
-        uploadedAt: Date.now(),
-        originalRows: JSON.parse(JSON.stringify(rows)),
-        workingRows: JSON.parse(JSON.stringify(rows)),
-        columns,
-        profiles,
-        quality,
-        transformations: [],
-        insights,
-        recommendations,
-        suggestedQuestions
+      setSaveStatus('saving');
+      const connId = `conn_${Date.now()}`;
+      
+      const connData = {
+        id: connId,
+        name: `${selectedConnector.name} Connection`,
+        type: selectedConnector.id.replace('db-', ''),
+        category: selectedConnector.category,
+        provider: selectedConnector.category === 'cloud' ? selectedConnector.name : undefined,
+        ...configValues
       };
 
-      setUploadStep('ready');
-      setSuccessData({
-        name,
-        fileName,
-        rows: rows.length,
-        columns: columns.length,
-        status: 'Ready for Analysis',
-        qualityScore: quality.score
-      });
-
-      onDatasetLoaded(datasetState);
-
-      setTimeout(() => {
-        if (onNavigate) {
-          onNavigate('overview');
+      if (selectedConnector.category === 'cloud') {
+        const result = await desktopBridge.auth.oauth(selectedConnector.name, configValues);
+        if (result.status === 'success' && result.token) {
+          await desktopBridge.credentials.save(`oauth_${connId}_token`, result.token);
+          connData.authenticated = true;
+        } else {
+          setSaveStatus('error');
+          setErrorMessage(result.message || 'OAuth Failed');
+          return;
         }
-      }, 700);
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Upload failed. Please check the file format and try again.');
-      setUploadStep('idle');
+      } else if (configValues.password) {
+        await desktopBridge.credentials.save(`db_${connId}_pwd`, configValues.password);
+        delete connData.password;
+      }
+
+      const existing = JSON.parse(localStorage.getItem('smart_data_saved_connections') || '[]');
+      existing.push(connData);
+      localStorage.setItem('smart_data_saved_connections', JSON.stringify(existing));
+      setSaveStatus('saved');
+      setTimeout(() => setSaveStatus(null), 3000);
+    } catch (e: any) {
+      setSaveStatus('error');
+      setErrorMessage(e.message || 'Failed to save connection.');
+    }
+  };
+  const isDesktop = desktopBridge.isElectron();
+
+  // Reset flow when going back
+  const goBack = (targetStep: Step) => {
+    setStep(targetStep);
+    setErrorMessage(null);
+    if (targetStep === 'category') {
+      setSelectedCategory(null);
+      setSelectedConnector(null);
+      setConfigValues({});
+      setTestStatus(null);
+      setPreviewData(null);
     }
   };
 
-  const handleFileChange = async (file: File) => {
+  const handleCategorySelect = (cat: ConnectorCategory) => {
+    setSelectedCategory(cat);
+    setStep('connector');
+  };
+
+  const handleConnectorSelect = (conn: Connector) => {
+    setSelectedConnector(conn);
+    setStep('configure');
+    
+    // Initialize config values
+    const initialConfig: Record<string, any> = {};
+    conn.configFields.forEach(f => {
+      initialConfig[f.id] = f.defaultValue !== undefined ? f.defaultValue : '';
+    });
+    setConfigValues(initialConfig);
+    setTestStatus(null);
+    setPreviewData(null);
+  };
+
+  const handleTestConnection = async () => {
+    if (!selectedConnector) return;
+    setTestStatus({ status: 'testing', message: 'Testing connection...' });
+    setErrorMessage(null);
+    try {
+      let finalConfig = { ...configValues };
+      if (finalConfig.id && !finalConfig.password) {
+        if (finalConfig.category === 'cloud') {
+          const token = await desktopBridge.credentials.load(`oauth_${finalConfig.id}_token`);
+          if (token) finalConfig.accessToken = token;
+        } else {
+          const pwd = await desktopBridge.credentials.load(`db_${finalConfig.id}_pwd`);
+          if (pwd) finalConfig.password = pwd;
+        }
+      }
+
+      const res = await selectedConnector.testConnection(finalConfig);
+      setTestStatus(res);
+      if (res.status === 'success') {
+        const preview = await selectedConnector.preview(finalConfig);
+        setPreviewData(preview);
+        setStep('preview');
+      } else if (res.status === 'unsupported' || res.status === 'error') {
+        setErrorMessage(res.message || 'Connection failed.');
+      }
+    } catch (e: any) {
+      setTestStatus({ status: 'error', message: e.message });
+      setErrorMessage(e.message);
+    }
+  };
+
+  const handleImport = async () => {
+    if (!selectedConnector) return;
+    setStep('importing');
+    setErrorMessage(null);
+    try {
+      let finalConfig = { ...configValues };
+      if (finalConfig.id && !finalConfig.password) {
+        if (finalConfig.category === 'cloud') {
+          const token = await desktopBridge.credentials.load(`oauth_${finalConfig.id}_token`);
+          if (token) finalConfig.accessToken = token;
+        } else {
+          const pwd = await desktopBridge.credentials.load(`db_${finalConfig.id}_pwd`);
+          if (pwd) finalConfig.password = pwd;
+        }
+      }
+
+      const { columns, rows } = await selectedConnector.import(finalConfig);
+      
+      const name = configValues.file ? configValues.file.name.replace(/\.[^/.]+$/, '') : selectedConnector.name;
+      const fileName = configValues.file ? configValues.file.name : `${selectedConnector.id}-import`;
+      const fileSize = configValues.file ? configValues.file.size : 0;
+      
+      await processAndSetDataset(name, fileName, fileSize, selectedConnector.id, columns, rows);
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Import failed.');
+      setStep('preview');
+    }
+  };
+
+  // Keep original drag and drop for backward compatibility / quick UX
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      handleQuickFile(file);
+    }
+  };
+
+  const handleQuickFile = async (file: File) => {
     setErrorMessage(null);
     setSuccessData(null);
-    setUploadStep('uploading');
-
+    setStep('importing');
     try {
       const parsed = await parseFile(file);
       await processAndSetDataset(
@@ -160,121 +198,363 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
         parsed.rows
       );
     } catch (err: any) {
-      setErrorMessage(err.message || 'Upload failed. Please check the file and try again.');
-      setUploadStep('idle');
+      setErrorMessage(err.message || 'Upload failed.');
+      setStep('category');
     }
   };
 
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setIsDragging(false);
-    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0];
-      handleFileChange(file);
+  const processAndSetDataset = async (
+    name: string, fileName: string, fileSize: number, fileType: string,
+    columns: string[], rows: Record<string, any>[]
+  ) => {
+    try {
+      await new Promise(r => setTimeout(r, 150));
+      if (!rows || rows.length === 0 || !columns || columns.length === 0) {
+        throw new Error('Dataset is empty or contains no readable columns/rows.');
+      }
+
+      const profiles = profileDataset(rows, columns);
+      const quality = auditDataQuality(rows, columns, profiles);
+      const { insights, recommendations, suggestedQuestions } = generateDatasetInsights(rows, columns, profiles);
+
+      const datasetState: DatasetState = {
+        id: `ds-${Date.now()}`,
+        name,
+        fileName,
+        fileSize,
+        fileType,
+        uploadedAt: Date.now(),
+        originalRows: [...rows],
+        workingRows: [...rows],
+        columns,
+        profiles,
+        quality,
+        transformations: [],
+        insights,
+        recommendations,
+        suggestedQuestions
+      };
+
+      setStep('ready');
+      setSuccessData({
+        name, fileName, rows: rows.length, columns: columns.length,
+        status: 'Ready for Analysis', qualityScore: quality.score
+      });
+
+      onDatasetLoaded(datasetState);
+
+      setTimeout(() => {
+        if (onNavigate) onNavigate('overview');
+      }, 700);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Processing failed.');
+      setStep('category');
     }
   };
 
-  const isLoading = uploadStep !== 'idle' && uploadStep !== 'ready';
+  const renderCategoryIcon = (cat: ConnectorCategory) => {
+    switch (cat) {
+      case 'files': return <FileText className="w-6 h-6 text-blue-400" />;
+      case 'databases': return <Database className="w-6 h-6 text-purple-400" />;
+      case 'cloud': return <Cloud className="w-6 h-6 text-cyan-400" />;
+      case 'web': return <Globe className="w-6 h-6 text-emerald-400" />;
+      case 'microsoft': return <Briefcase className="w-6 h-6 text-blue-500" />;
+      default: return <Database className="w-6 h-6" />;
+    }
+  };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-6">
+    <div className="p-6 max-w-5xl mx-auto space-y-6">
       {/* Header */}
-      <div className="border-b border-[#252A36] pb-4">
-        <h1 className="text-xl font-bold text-slate-100 tracking-tight">Data Ingestion</h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Bring your tabular data into Smart Data Analysis Assistant. Upload a CSV or Excel spreadsheet, or pick a sample dataset.
-        </p>
-      </div>
-
-      {/* Primary Upload Card */}
-      <div
-        onDragOver={e => {
-          e.preventDefault();
-          setIsDragging(true);
-        }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-        onClick={handleChooseFile}
-        className={`border-2 border-dashed rounded-2xl p-8 text-center transition-all cursor-pointer relative overflow-hidden ${
-          isDragging
-            ? 'border-amber-400 bg-amber-500/10'
-            : 'border-[#252A36] bg-[#12151C] hover:border-amber-500/40 hover:bg-[#181D26]'
-        }`}
-      >
-        <input
-          type="file"
-          ref={fileInputRef}
-          onChange={e => {
-            if (e.target.files && e.target.files.length > 0) {
-              handleFileChange(e.target.files[0]);
-            }
-          }}
-          accept=".csv,.xlsx,.xls,.json,.txt"
-          className="hidden"
-        />
-
-        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto mb-3.5 shadow-lg shadow-amber-500/10">
-          <UploadCloud className="w-7 h-7" />
+      <div className="border-b border-[#252A36] pb-4 flex justify-between items-end">
+        <div>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight">Get Data</h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Connect to files, databases, and online services to import datasets.
+          </p>
         </div>
-
-        <h3 className="text-sm font-semibold text-slate-100">
-          Drag and drop your dataset here, or <span className="text-amber-400 underline decoration-amber-500/50">browse files</span>
-        </h3>
-        <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto">
-          Supports CSV (.csv), Excel (.xlsx, .xls), and JSON files with automatic schema detection.
-        </p>
-
-        <div className="flex items-center justify-center gap-3 mt-4">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              handleChooseFile();
-            }}
-            className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition cursor-pointer flex items-center gap-2 mx-auto"
+        
+        {step !== 'category' && step !== 'ready' && step !== 'importing' && (
+          <button 
+            onClick={() => goBack(step === 'connector' ? 'category' : step === 'configure' ? 'connector' : 'configure')}
+            className="text-xs text-amber-400 hover:text-amber-300 transition"
           >
-            <UploadCloud className="w-4 h-4" />
-            <span>{isDesktop ? 'Open Dataset (Native Dialog)' : 'Upload Data'}</span>
+            ← Back
           </button>
-        </div>
-
-        {isDesktop && (
-          <div className="mt-3 flex items-center justify-center gap-1.5 text-[11px] text-amber-400/80 font-mono">
-            <Monitor className="w-3.5 h-3.5 text-amber-400" />
-            <span>Desktop Host Mode: Direct local filesystem access active</span>
-          </div>
-        )}
-
-        {isLoading && (
-          <div className="absolute inset-0 bg-[#0B0D11]/90 backdrop-blur-sm flex flex-col items-center justify-center z-20 space-y-3">
-            <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
-            <div className="text-center space-y-1">
-              <p className="text-sm font-bold text-amber-400">
-                {uploadStep === 'uploading' && 'Uploading file...'}
-                {uploadStep === 'validating' && 'Checking columns and rows...'}
-                {uploadStep === 'creating' && 'Generating data profile & quality score...'}
-              </p>
-              <p className="text-xs text-slate-400 font-mono">Almost ready...</p>
-            </div>
-          </div>
         )}
       </div>
 
-      {/* Success Notification */}
-      {successData && (
-        <div className="bg-[#12151C] border border-emerald-500/30 rounded-2xl p-5 shadow-xl space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#252A36] pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                <CheckCircle2 className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-emerald-300">Dataset Loaded Successfully</h3>
-                <p className="text-xs text-slate-400">{successData.name} is ready for exploration and analysis.</p>
-              </div>
-            </div>
+      {errorMessage && (
+        <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-center gap-3 text-rose-300 text-xs">
+          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
-            {onNavigate && (
+      {/* Main Flow */}
+      {step === 'category' && (
+        <div className="space-y-6">
+          <div 
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleDrop}
+            className={`border-2 border-dashed rounded-2xl p-6 text-center transition-all relative overflow-hidden ${
+              isDragging ? 'border-amber-400 bg-amber-500/10' : 'border-[#252A36] bg-[#12151C]'
+            }`}
+          >
+            <div className="text-slate-400 mb-2">
+              <UploadCloud className="w-8 h-8 mx-auto text-amber-500/60" />
+            </div>
+            <h3 className="text-sm font-bold text-slate-200">Quick Drop</h3>
+            <p className="text-xs text-slate-400 mt-1">Drag and drop a CSV or JSON file here to instantly import.</p>
+          </div>
+
+          <h2 className="text-sm font-bold text-slate-300">Choose Source Category</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            {(['files', 'databases', 'cloud', 'web', 'microsoft'] as ConnectorCategory[]).map(cat => (
+              <button
+                key={cat}
+                onClick={() => handleCategorySelect(cat)}
+                className="p-4 rounded-xl bg-[#12151C] hover:bg-[#181D26] border border-[#252A36] hover:border-amber-500/40 text-center transition flex flex-col items-center gap-3 cursor-pointer group"
+              >
+                <div className="p-3 rounded-xl bg-[#0B0D11] border border-[#252A36] group-hover:border-amber-500/30">
+                  {renderCategoryIcon(cat)}
+                </div>
+                <span className="text-xs font-bold text-slate-200 capitalize">{cat}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Saved Connections */}
+          {(() => {
+            const savedStr = localStorage.getItem('smart_data_saved_connections');
+            const saved = savedStr ? JSON.parse(savedStr) : [];
+            if (saved.length === 0) return null;
+            return (
+              <div className="border-t border-[#252A36] pt-6 space-y-3">
+                <h2 className="text-sm font-bold text-slate-300">Saved Connections</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {saved.map((conn: any) => (
+                    <button
+                      key={conn.id}
+                      onClick={() => {
+                        const baseConnector = globalConnectorRegistry.getConnectorsByCategory(conn.category).find(c => (c.id === `db-${conn.type}` || c.name === conn.provider || c.id === conn.connectorId));
+                        if (baseConnector) {
+                          setSelectedCategory(conn.category);
+                          setSelectedConnector(baseConnector);
+                          setConfigValues({ ...conn }); // preload config
+                          setStep('configure');
+                        }
+                      }}
+                      className="p-3.5 rounded-xl bg-[#12151C] hover:bg-[#181D26] border border-[#252A36] hover:border-amber-500/30 text-left transition flex items-start gap-3 group cursor-pointer"
+                    >
+                      <div className="p-2 rounded-lg bg-[#0B0D11] border border-[#252A36]">
+                        {conn.category === 'cloud' ? <Cloud className="w-4 h-4 text-sky-400" /> : <Database className="w-4 h-4 text-amber-400" />}
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition">
+                          {conn.name}
+                        </p>
+                        <p className="text-[10px] text-slate-500 uppercase font-mono mt-0.5">
+                          {conn.category === 'cloud' ? conn.provider : `${conn.type} - ${conn.host}`}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Sample Datasets */}
+          <div className="border-t border-[#252A36] pt-6 space-y-3">
+            <h2 className="text-sm font-bold text-slate-300">Or Select a Sample Dataset</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {SAMPLE_DATASETS.map(sample => (
+                <button
+                  key={sample.id}
+                  onClick={() => onLoadSample && onLoadSample(sample.id)}
+                  className="p-3.5 rounded-xl bg-[#12151C] hover:bg-[#181D26] border border-[#252A36] hover:border-amber-500/30 text-left transition flex items-start justify-between gap-3 group cursor-pointer"
+                >
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition">
+                      {sample.name}
+                    </p>
+                    <p className="text-[11px] text-slate-400 line-clamp-2">
+                      {sample.description}
+                    </p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {step === 'connector' && selectedCategory && (
+        <div className="space-y-4 animate-in fade-in slide-in-from-right-4">
+          <h2 className="text-sm font-bold text-slate-300 capitalize">{selectedCategory} Connectors</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+            {globalConnectorRegistry.getConnectorsByCategory(selectedCategory).map(conn => (
+              <button
+                key={conn.id}
+                onClick={() => handleConnectorSelect(conn)}
+                className="p-4 rounded-xl bg-[#12151C] hover:bg-[#181D26] border border-[#252A36] hover:border-amber-500/40 text-left transition flex flex-col gap-2 cursor-pointer group relative"
+              >
+                {conn.requiresDriver && (
+                  <span className="absolute top-3 right-3 text-[9px] uppercase font-bold bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded">Driver Req</span>
+                )}
+                {conn.requiresAuthentication && (
+                  <span className="absolute top-3 right-3 text-[9px] uppercase font-bold bg-amber-500/20 text-amber-400 px-1.5 py-0.5 rounded">Auth Req</span>
+                )}
+                <h3 className="text-sm font-bold text-slate-200 group-hover:text-amber-400 transition">{conn.name}</h3>
+                <p className="text-xs text-slate-400">{conn.description}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {step === 'configure' && selectedConnector && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+          <div>
+            <h2 className="text-sm font-bold text-slate-200">Configure {selectedConnector.name}</h2>
+            <p className="text-xs text-slate-400 mt-1">Provide connection details.</p>
+          </div>
+
+          <div className="bg-[#12151C] border border-[#252A36] rounded-xl p-5 space-y-4">
+            {selectedConnector.configFields.map(field => (
+              <div key={field.id}>
+                <label className="block text-xs font-bold text-slate-300 mb-1.5">{field.label} {field.required && <span className="text-rose-400">*</span>}</label>
+                {field.type === 'select' ? (
+                  <select
+                    className="w-full bg-[#0B0D11] border border-[#252A36] rounded-lg px-3 py-2 text-sm text-slate-200"
+                    value={configValues[field.id] || ''}
+                    onChange={e => setConfigValues({...configValues, [field.id]: e.target.value})}
+                  >
+                    {field.options?.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                ) : field.type === 'file' ? (
+                  <input
+                    type="file"
+                    onChange={e => {
+                      if (e.target.files && e.target.files.length > 0) {
+                        setConfigValues({...configValues, [field.id]: e.target.files[0]});
+                      }
+                    }}
+                    className="w-full text-sm text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#252A36] file:text-slate-200 hover:file:bg-[#2A3143]"
+                  />
+                ) : (
+                  <input
+                    type={field.type}
+                    placeholder={field.placeholder}
+                    value={configValues[field.id] || ''}
+                    onChange={e => setConfigValues({...configValues, [field.id]: e.target.value})}
+                    className="w-full bg-[#0B0D11] border border-[#252A36] rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-amber-500/50"
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-3 justify-end">
+            <button
+              onClick={handleTestConnection}
+              disabled={testStatus?.status === 'testing'}
+              className="px-5 py-2 rounded-xl bg-[#252A36] hover:bg-[#2A3143] text-slate-200 font-bold text-xs transition flex items-center gap-2"
+            >
+              {testStatus?.status === 'testing' ? (
+                <span className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></span>
+              ) : <Play className="w-3.5 h-3.5" />}
+              Test Connection & Preview
+            </button>
+            {(selectedConnector.category === 'databases' || selectedConnector.category === 'cloud') && (
+              <button
+                onClick={handleSaveConnection}
+                disabled={saveStatus === 'saving'}
+                className="px-5 py-2 rounded-xl border border-[#252A36] hover:bg-[#181D26] text-amber-400 font-bold text-xs transition flex items-center gap-2"
+              >
+                {saveStatus === 'saving' ? (
+                  <span className="w-3.5 h-3.5 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></span>
+                ) : saveStatus === 'saved' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                ) : <Database className="w-3.5 h-3.5" />}
+                {saveStatus === 'saved' ? 'Saved to Settings' : 'Save Connection'}
+              </button>
+            )}
+          </div>
+          
+          {testStatus?.status === 'unsupported' && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 text-amber-400 text-xs font-mono">
+              [SYSTEM WARNING] {testStatus.message}
+            </div>
+          )}
+        </div>
+      )}
+
+      {step === 'preview' && previewData && (
+        <div className="space-y-6 animate-in fade-in slide-in-from-right-4">
+          <div className="flex justify-between items-end">
+            <div>
+              <h2 className="text-sm font-bold text-slate-200">Data Preview</h2>
+              <p className="text-xs text-slate-400 mt-1">Showing sample of {previewData.rowCount} rows and {previewData.columnCount} columns.</p>
+            </div>
+            <button
+              onClick={handleImport}
+              className="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs shadow-md shadow-amber-500/20 transition flex items-center gap-2"
+            >
+              <span>Import Dataset</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="bg-[#12151C] border border-[#252A36] rounded-xl overflow-hidden overflow-x-auto">
+            <table className="w-full text-left text-xs whitespace-nowrap">
+              <thead className="bg-[#0B0D11] text-slate-400 uppercase font-mono text-[10px]">
+                <tr>
+                  {previewData.columns.slice(0, 10).map((col: string) => (
+                    <th key={col} className="px-4 py-2 border-b border-[#252A36] font-medium">{col}</th>
+                  ))}
+                  {previewData.columns.length > 10 && <th className="px-4 py-2 border-b border-[#252A36]">...</th>}
+                </tr>
+              </thead>
+              <tbody className="text-slate-300 divide-y divide-[#252A36]">
+                {previewData.rows.slice(0, 5).map((row: any, i: number) => (
+                  <tr key={i} className="hover:bg-[#181D26] transition-colors">
+                    {previewData.columns.slice(0, 10).map((col: string) => (
+                      <td key={`${i}-${col}`} className="px-4 py-2 truncate max-w-[150px]">{String(row[col] ?? '')}</td>
+                    ))}
+                    {previewData.columns.length > 10 && <td className="px-4 py-2 text-slate-500">...</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {step === 'importing' && (
+        <div className="py-20 flex flex-col items-center justify-center space-y-4">
+          <div className="w-8 h-8 border-2 border-amber-400 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-bold text-amber-400">Importing and profiling dataset...</p>
+        </div>
+      )}
+
+      {step === 'ready' && successData && (
+        <div className="bg-[#12151C] border border-emerald-500/30 rounded-2xl p-5 shadow-xl space-y-4">
+          <div className="flex items-center gap-2.5 border-b border-[#252A36] pb-3">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+              <CheckCircle2 className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-emerald-300">Import Successful</h3>
+              <p className="text-xs text-slate-400">{successData.name} is ready.</p>
+            </div>
+          </div>
+          <div className="flex justify-end">
+             {onNavigate && (
               <button
                 onClick={() => onNavigate('overview')}
                 className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition flex items-center gap-2 cursor-pointer shadow-md shadow-amber-500/20"
@@ -284,108 +564,8 @@ export const DataUpload: React.FC<DataUploadProps> = ({ onDatasetLoaded, onNavig
               </button>
             )}
           </div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#0B0D11] border border-[#252A36] rounded-xl p-3 text-center">
-            <div>
-              <span className="text-[10px] uppercase font-mono text-slate-400">Dataset Name</span>
-              <p className="text-xs font-bold text-slate-200 truncate mt-0.5" title={successData.name}>{successData.name}</p>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-mono text-slate-400">Rows</span>
-              <p className="text-xs font-bold text-slate-200 font-mono mt-0.5">{successData.rows.toLocaleString()}</p>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-mono text-slate-400">Columns</span>
-              <p className="text-xs font-bold text-slate-200 font-mono mt-0.5">{successData.columns}</p>
-            </div>
-            <div>
-              <span className="text-[10px] uppercase font-mono text-slate-400">Status</span>
-              <p className="text-xs font-bold text-emerald-400 font-mono mt-0.5">{successData.status}</p>
-            </div>
-          </div>
         </div>
       )}
-
-      {/* Error Message */}
-      {errorMessage && (
-        <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-4 flex items-center gap-3 text-rose-300 text-xs">
-          <AlertCircle className="w-5 h-5 text-rose-400 shrink-0" />
-          <span>{errorMessage}</span>
-        </div>
-      )}
-
-      {/* Sample Datasets Selector */}
-      <div className="border-t border-[#252A36] pt-6 space-y-3">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-slate-300">Or Select a Sample Dataset</span>
-          <span className="text-[11px] text-slate-400">Instant load for demonstration</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {SAMPLE_DATASETS.map(sample => (
-            <button
-              key={sample.id}
-              onClick={() => onLoadSample && onLoadSample(sample.id)}
-              className="p-3.5 rounded-xl bg-[#12151C] hover:bg-[#181D26] border border-[#252A36] hover:border-amber-500/30 text-left transition flex items-start justify-between gap-3 group cursor-pointer"
-            >
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-slate-200 group-hover:text-amber-400 transition">
-                  {sample.name}
-                </p>
-                <p className="text-[11px] text-slate-400 line-clamp-2">
-                  {sample.description}
-                </p>
-              </div>
-              <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-[#181D26] text-slate-400 group-hover:text-amber-400 shrink-0">
-                Load
-              </span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Advanced Import Options (Hidden by default) */}
-      <div className="border-t border-[#252A36] pt-4">
-        <button
-          onClick={() => setShowAdvanced(!showAdvanced)}
-          className="text-xs text-slate-400 hover:text-slate-200 font-medium flex items-center gap-1.5 transition cursor-pointer"
-        >
-          <Sliders className="w-3.5 h-3.5 text-amber-400" />
-          <span>Advanced Import Options</span>
-          {showAdvanced ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-        </button>
-
-        {showAdvanced && (
-          <div className="mt-3 p-4 rounded-xl bg-[#12151C] border border-[#252A36] grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in text-xs">
-            <div>
-              <label className="block text-slate-400 mb-1">CSV Delimiter</label>
-              <select
-                value={customDelimiter}
-                onChange={e => setCustomDelimiter(e.target.value)}
-                className="w-full bg-[#0B0D11] border border-[#252A36] rounded-lg px-3 py-1.5 text-slate-200"
-              >
-                <option value="auto">Auto-detect (Comma, Tab, Semicolon)</option>
-                <option value=",">Comma (,)</option>
-                <option value=";">Semicolon (;)</option>
-                <option value="\t">Tab (\t)</option>
-                <option value="|">Pipe (|)</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-slate-400 mb-1">Skip Header Rows</label>
-              <input
-                type="number"
-                min="0"
-                max="10"
-                value={skipHeaderRows}
-                onChange={e => setSkipHeaderRows(parseInt(e.target.value) || 0)}
-                className="w-full bg-[#0B0D11] border border-[#252A36] rounded-lg px-3 py-1.5 text-slate-200"
-              />
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 };
-

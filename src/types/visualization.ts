@@ -14,6 +14,7 @@ import {
 export type ExtendedChartType =
   | 'bar'
   | 'horizontal_bar'
+  | 'column'
   | 'line'
   | 'area'
   | 'step_line'
@@ -31,7 +32,9 @@ export type ExtendedChartType =
   | 'heatmap'
   | 'composed'
   | 'gauge'
-  | 'radial_bar';
+  | 'radial_bar'
+  | 'kpi_card'
+  | 'table';
 
 export interface VisualizationFilter {
   id: string;
@@ -73,6 +76,8 @@ export interface SavedVisualization {
   createdAt: number;
   lastModified: number;
   tags?: string[];
+  dashboardWidth?: 'full' | 'half' | 'third' | 'two_thirds';
+  inExecutiveDashboard?: boolean;
 }
 
 export type DashboardCardWidth = 'small' | 'medium' | 'large' | 'full' | 'third' | 'half';

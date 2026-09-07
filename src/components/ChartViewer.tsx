@@ -316,6 +316,7 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
           >
             <optgroup label="Comparison & Ranking">
               <option value="bar">📊 Bar Chart</option>
+              <option value="column">🏛️ Column Chart</option>
               <option value="horizontal_bar">📶 Horizontal Bar</option>
               <option value="waterfall">🪜 Waterfall Bridge</option>
               <option value="funnel">⏳ Conversion Funnel</option>
@@ -340,9 +341,11 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
               <option value="heatmap">🗺️ Matrix Heatmap</option>
             </optgroup>
             <optgroup label="Statistical & Executive">
-              <option value="histogram">🏛️ Histogram</option>
+              <option value="histogram">📊 Histogram Distribution</option>
               <option value="box">📦 Box Plot</option>
               <option value="gauge">🧭 KPI Performance Gauge</option>
+              <option value="kpi_card">🎯 Single-Value KPI Card</option>
+              <option value="table">📋 Summary Data Table</option>
             </optgroup>
           </select>
 
@@ -426,7 +429,7 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            {currentType === 'bar' ? (
+            {currentType === 'bar' || currentType === 'column' ? (
               <BarChart data={processedData} margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#252A36" vertical={false} />
                 <XAxis
@@ -1102,6 +1105,146 @@ export const ChartViewer: React.FC<ChartViewerProps> = ({
                     </div>
                   );
                 })()}
+              </div>
+            ) : currentType === 'histogram' ? (
+              <BarChart data={processedData} margin={{ top: 10, right: 20, left: 10, bottom: 25 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#252A36" vertical={false} />
+                <XAxis
+                  dataKey="binLabel"
+                  stroke="#64748B"
+                  fontSize={10}
+                  tickLine={false}
+                  label={xAxisLabel ? { value: xAxisLabel, position: 'bottom', offset: 10, fill: '#94A3B8', fontSize: 11 } : undefined}
+                />
+                <YAxis
+                  stroke="#64748B"
+                  fontSize={11}
+                  tickLine={false}
+                  label={yAxisLabel ? { value: yAxisLabel, angle: -90, position: 'insideLeft', fill: '#94A3B8', fontSize: 11 } : undefined}
+                />
+                <Tooltip
+                  contentStyle={{ backgroundColor: '#0B0D11', borderColor: '#2D3342', borderRadius: '10px', fontSize: '12px' }}
+                  itemStyle={{ color: '#F8FAFC' }}
+                  formatter={(val: any) => [`${val} occurrences`, 'Frequency']}
+                />
+                <Bar dataKey="count" fill="#F59E0B" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            ) : currentType === 'kpi_card' || currentType === 'kpi' ? (
+              <div className="w-full h-full flex flex-col items-center justify-center p-6 bg-gradient-to-b from-[#121620] to-[#0D1017] rounded-xl border border-[#232936]">
+                {(() => {
+                  const card = processedData[0] || {};
+                  const disp = card.formattedValue || (typeof card.value === 'number' ? card.value.toLocaleString() : (card.value || '0'));
+                  const status = card.status || 'On Track';
+                  const statusColor = status === 'On Track' ? '#10B981' : status === 'Moderate' ? '#F59E0B' : '#F43F5E';
+                  return (
+                    <div className="text-center space-y-4 max-w-sm w-full">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-500/20">
+                          {card.aggregation || 'KPI Metric'}
+                        </span>
+                        <span
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full border"
+                          style={{
+                            backgroundColor: `${statusColor}15`,
+                            color: statusColor,
+                            borderColor: `${statusColor}35`
+                          }}
+                        >
+                          {status}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-4xl font-extrabold tracking-tight text-slate-100 font-mono">
+                          {disp}
+                        </div>
+                        <div className="text-sm font-medium text-slate-400">
+                          {card.name || title}
+                        </div>
+                      </div>
+
+                      {card.target && (
+                        <div className="space-y-1.5 pt-2">
+                          <div className="flex items-center justify-between text-[11px] text-slate-400">
+                            <span>Target Goal</span>
+                            <span className="font-mono text-slate-200 font-semibold">{card.target?.toLocaleString()} ({card.progressPct || 100}%)</span>
+                          </div>
+                          <div className="w-full h-2 bg-[#1E2430] rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all duration-500"
+                              style={{
+                                width: `${Math.min(100, card.progressPct || 100)}%`,
+                                backgroundColor: statusColor
+                              }}
+                            />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="grid grid-cols-3 gap-2 pt-3 border-t border-[#232936] text-[10px]">
+                        <div className="bg-[#181D26] p-2 rounded-lg">
+                          <span className="text-slate-500 block">Sample Size</span>
+                          <span className="text-slate-200 font-mono font-bold">{card.count?.toLocaleString() || processedData.length}</span>
+                        </div>
+                        <div className="bg-[#181D26] p-2 rounded-lg">
+                          <span className="text-slate-500 block">Min</span>
+                          <span className="text-slate-200 font-mono font-bold">{card.min !== undefined ? card.min.toLocaleString() : '-'}</span>
+                        </div>
+                        <div className="bg-[#181D26] p-2 rounded-lg">
+                          <span className="text-slate-500 block">Max</span>
+                          <span className="text-slate-200 font-mono font-bold">{card.max !== undefined ? card.max.toLocaleString() : '-'}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            ) : currentType === 'table' ? (
+              <div className="w-full h-full overflow-auto bg-[#0E1117] border border-[#232936] rounded-xl p-3 flex flex-col">
+                <div className="flex items-center justify-between pb-2 border-b border-[#232936] text-[11px] text-slate-400">
+                  <span className="font-semibold uppercase tracking-wider text-amber-400">
+                    Summary Breakdown ({processedData.length} rows)
+                  </span>
+                  <span className="text-[10px] text-slate-500">Sorted by value</span>
+                </div>
+                <div className="overflow-x-auto flex-1 mt-2">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-[#252A36] text-slate-400 bg-[#141820]">
+                        <th className="px-3 py-2 font-semibold">Dimension</th>
+                        <th className="px-3 py-2 font-semibold text-right">Value</th>
+                        <th className="px-3 py-2 font-semibold text-right">Records</th>
+                        <th className="px-3 py-2 font-semibold text-right">% Share</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#1D222E]">
+                      {processedData.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-[#161B24] transition">
+                          <td className="px-3 py-2 font-medium text-slate-200 truncate max-w-xs">
+                            {row.category || row.name || `Row ${idx + 1}`}
+                          </td>
+                          <td className="px-3 py-2 font-mono font-bold text-amber-400 text-right">
+                            {typeof row.value === 'number' ? row.value.toLocaleString() : row.value}
+                          </td>
+                          <td className="px-3 py-2 font-mono text-slate-400 text-right">
+                            {row.count ? row.count.toLocaleString() : '-'}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <span className="text-[11px] font-mono text-slate-300">{row.pctOfTotal ?? 0}%</span>
+                              <div className="w-12 h-1.5 bg-[#1F2533] rounded-full overflow-hidden">
+                                <div
+                                  className="h-full bg-amber-500 rounded-full"
+                                  style={{ width: `${Math.min(100, row.pctOfTotal ?? 0)}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             ) : null}
           </ResponsiveContainer>

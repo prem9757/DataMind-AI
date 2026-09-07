@@ -60,7 +60,11 @@ class DatasetEngine {
       qualityScore: state.quality?.score || 100,
       changeDescription: initialDescription || 'Initial raw dataset ingestion and profile compilation',
       transformationCount: 0,
-      stateSnapshot: JSON.parse(JSON.stringify(state))
+      stateSnapshot: {
+        ...state,
+        workingRows: [...state.workingRows],
+        originalRows: [...state.originalRows]
+      }
     };
 
     const managed: ManagedDataset = {
@@ -109,7 +113,11 @@ class DatasetEngine {
       qualityScore: newState.quality?.score || 100,
       changeDescription,
       transformationCount: newState.transformations.length,
-      stateSnapshot: JSON.parse(JSON.stringify(newState))
+      stateSnapshot: {
+        ...newState,
+        workingRows: [...newState.workingRows],
+        originalRows: [...newState.originalRows]
+      }
     };
 
     managed.versions.push(newVersion);
@@ -147,7 +155,11 @@ class DatasetEngine {
     if (!targetVersion) throw new Error(`Version v${versionNumber} not found`);
 
     managed.currentVersion = versionNumber;
-    managed.activeState = JSON.parse(JSON.stringify(targetVersion.stateSnapshot));
+    managed.activeState = {
+      ...targetVersion.stateSnapshot,
+      workingRows: [...targetVersion.stateSnapshot.workingRows],
+      originalRows: [...targetVersion.stateSnapshot.originalRows]
+    };
     managed.lastModified = Date.now();
 
     this.notify();

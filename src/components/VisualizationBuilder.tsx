@@ -59,8 +59,9 @@ export interface ChartTypeOption {
 }
 
 const SUPPORTED_CHART_TYPES: ChartTypeOption[] = [
-  // Comparison & Ranking (4)
+  // Comparison & Ranking (5)
   { type: 'bar', label: 'Bar', category: 'Comparison', icon: '📊', hint: 'Compare categories or ranked values' },
+  { type: 'column', label: 'Column', category: 'Comparison', icon: '🏛️', hint: 'Vertical column comparison bars' },
   { type: 'horizontal_bar', label: 'Horiz Bar', category: 'Comparison', icon: '📶', hint: 'Ideal for long label names & rankings' },
   { type: 'waterfall', label: 'Waterfall', category: 'Comparison', icon: '🪜', hint: 'Variance bridge & incremental cost steps' },
   { type: 'funnel', label: 'Funnel', category: 'Comparison', icon: '⏳', hint: 'Conversion pipeline & drop-off stages' },
@@ -84,10 +85,12 @@ const SUPPORTED_CHART_TYPES: ChartTypeOption[] = [
   { type: 'bubble', label: 'Bubble', category: 'Correlation', icon: '🫧', hint: '3-metric correlation: X, Y, and Bubble Size' },
   { type: 'heatmap', label: 'Heatmap', category: 'Correlation', icon: '🗺️', hint: '2D cross-tab matrix intersection density' },
 
-  // Executive & Distribution (3)
-  { type: 'histogram', label: 'Histogram', category: 'Executive', icon: '🏛️', hint: 'Frequency distribution and bin spreads' },
+  // Executive & Distribution (5)
+  { type: 'histogram', label: 'Histogram', category: 'Executive', icon: '📊', hint: 'Frequency distribution and bin spreads' },
   { type: 'box', label: 'Box Plot', category: 'Executive', icon: '📦', hint: 'Quartiles, median spread & outlier detection' },
-  { type: 'gauge', label: 'KPI Gauge', category: 'Executive', icon: '🧭', hint: 'Target benchmark velocity dial & status' }
+  { type: 'gauge', label: 'KPI Gauge', category: 'Executive', icon: '🧭', hint: 'Target benchmark velocity dial & status' },
+  { type: 'kpi_card', label: 'KPI Card', category: 'Executive', icon: '🎯', hint: 'Single-value executive KPI metric & progress' },
+  { type: 'table', label: 'Table', category: 'Executive', icon: '📋', hint: 'Aggregated summary data table with totals' }
 ];
 
 export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
@@ -470,6 +473,153 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
               {t.name}
             </button>
           ))}
+        </div>
+
+        {/* Step-by-Step Workflow Guide: Dataset → Chart Type → Fields → Aggregation → Granularity → Preview → Save → Add to Dashboard */}
+        <div className="pt-3 border-t border-[#252A36]">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+              Power BI Guided Studio Workflow
+            </span>
+            <span className="text-[10px] text-slate-400 font-mono">Step-by-Step Design</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+            {/* Step 1: Dataset */}
+            <div className="bg-[#0B0D11] border border-amber-500/40 rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">1. Dataset</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              </div>
+              <div className="mt-1 truncate">
+                <span className="text-xs font-bold text-slate-200 block truncate" title={dataset.name}>{dataset.name}</span>
+                <span className="text-[10px] text-slate-400 font-mono">{dataset.rowCount.toLocaleString()} rows</span>
+              </div>
+            </div>
+
+            {/* Step 2: Chart Type */}
+            <div className="bg-[#0B0D11] border border-[#2D3342] rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">2. Chart Type</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-bold text-slate-200 capitalize block truncate">
+                  {chartType.replace('_', ' ')}
+                </span>
+                <span className="text-[10px] text-slate-400">Selected visual</span>
+              </div>
+            </div>
+
+            {/* Step 3: Fields */}
+            <div className={`bg-[#0B0D11] border rounded-xl p-2 flex flex-col justify-between ${
+              xAxisColumn || yAxisColumn ? 'border-[#2D3342]' : 'border-amber-500/50'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">3. Fields</span>
+                {xAxisColumn || yAxisColumn ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                )}
+              </div>
+              <div className="mt-1 truncate">
+                <span className="text-xs font-bold text-slate-200 block truncate" title={xAxisColumn || 'No axis'}>
+                  {xAxisColumn || 'Select X'}
+                </span>
+                <span className="text-[10px] text-slate-400 block truncate" title={yAxisColumn || 'No measure'}>
+                  {yAxisColumn ? `Y: ${yAxisColumn}` : 'Select Y'}
+                </span>
+              </div>
+            </div>
+
+            {/* Step 4: Aggregation */}
+            <div className="bg-[#0B0D11] border border-[#2D3342] rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">4. Aggregation</span>
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-bold text-slate-200 uppercase font-mono block truncate">
+                  {aggregation}
+                </span>
+                <span className="text-[10px] text-slate-400">Metric function</span>
+              </div>
+            </div>
+
+            {/* Step 5: Granularity */}
+            <div className="bg-[#0B0D11] border border-[#2D3342] rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">5. Granularity</span>
+                {isXAxisDate ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <span className="text-[9px] text-slate-400">N/A</span>
+                )}
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-bold text-slate-200 capitalize block truncate">
+                  {isXAxisDate ? timeGranularity : 'Category'}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {isXAxisDate ? 'Temporal bin' : 'Discrete'}
+                </span>
+              </div>
+            </div>
+
+            {/* Step 6: Preview */}
+            <div className={`bg-[#0B0D11] border rounded-xl p-2 flex flex-col justify-between ${
+              computedResult.isValid ? 'border-emerald-500/30' : 'border-rose-500/30'
+            }`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">6. Preview</span>
+                {computedResult.isValid ? (
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                ) : (
+                  <AlertCircle className="w-3 h-3 text-rose-400" />
+                )}
+              </div>
+              <div className="mt-1">
+                <span className={`text-xs font-bold block truncate ${
+                  computedResult.isValid ? 'text-emerald-300' : 'text-rose-300'
+                }`}>
+                  {computedResult.isValid ? 'Live Ready' : 'Incomplete'}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {computedResult.isValid ? `${computedResult.data.length} records` : 'Fix mappings'}
+                </span>
+              </div>
+            </div>
+
+            {/* Step 7: Save */}
+            <div className="bg-[#0B0D11] border border-[#2D3342] rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">7. Save</span>
+                <Save className="w-3 h-3 text-amber-400" />
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-bold text-slate-200 block truncate">
+                  {editingViz ? 'Update Viz' : 'New Chart'}
+                </span>
+                <span className="text-[10px] text-slate-400">Persistent Studio</span>
+              </div>
+            </div>
+
+            {/* Step 8: Add to Dashboard */}
+            <div className="bg-[#0B0D11] border border-amber-500/30 rounded-xl p-2 flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400">8. Dashboard</span>
+                <Sparkles className="w-3 h-3 text-amber-400" />
+              </div>
+              <div className="mt-1">
+                <span className="text-xs font-bold text-amber-300 block truncate">
+                  Executive Sync
+                </span>
+                <span className="text-[10px] text-slate-400">1-Click Placement</span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1086,8 +1236,9 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
               </div>
             )}
 
-            {/* BAR / HORIZONTAL_BAR / LINE / STEP_LINE / AREA CONFIGURATION */}
+            {/* BAR / COLUMN / HORIZONTAL_BAR / LINE / STEP_LINE / AREA CONFIGURATION */}
             {(chartType === 'bar' ||
+              chartType === 'column' ||
               chartType === 'horizontal_bar' ||
               chartType === 'line' ||
               chartType === 'step_line' ||
@@ -1260,6 +1411,130 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
                     <option value={5}>Top 5</option>
                     <option value={10}>Top 10</option>
                     <option value={20}>Top 20</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* KPI CARD CONFIGURATION */}
+            {chartType === 'kpi_card' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    KPI Measure Metric
+                  </label>
+                  <select
+                    value={yAxisColumn || xAxisColumn}
+                    onChange={e => {
+                      setYAxisColumn(e.target.value);
+                      setXAxisColumn(e.target.value);
+                    }}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.length === 0 ? (
+                      <option value="">No numeric columns found</option>
+                    ) : (
+                      numCols.map(c => (
+                        <option key={c} value={c}># {c}</option>
+                      ))
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Aggregation Function
+                  </label>
+                  <select
+                    value={aggregation}
+                    onChange={e => setAggregation(e.target.value as AggregationFunction)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="sum">Sum (Total)</option>
+                    <option value="avg">Average (Mean)</option>
+                    <option value="median">Median</option>
+                    <option value="count">Count (Total Records)</option>
+                    <option value="count_distinct">Distinct Count</option>
+                    <option value="min">Minimum</option>
+                    <option value="max">Maximum</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {/* SUMMARY TABLE CONFIGURATION */}
+            {chartType === 'table' && (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Group Dimension (Rows)
+                  </label>
+                  <select
+                    value={xAxisColumn}
+                    onChange={e => setXAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {columns.map(c => {
+                      const p = profiles[c];
+                      const typeIcon = p?.type === 'numeric' ? '#' : p?.type === 'datetime' ? '📅' : 'Aa';
+                      return (
+                        <option key={c} value={c}>
+                          {typeIcon} {c}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Measure Metric (Values)
+                  </label>
+                  <select
+                    value={yAxisColumn}
+                    onChange={e => setYAxisColumn(e.target.value)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    {numCols.map(c => (
+                      <option key={c} value={c}># {c}</option>
+                    ))}
+                    <option value="">-- Count of Records --</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Aggregation
+                  </label>
+                  <select
+                    value={aggregation}
+                    onChange={e => setAggregation(e.target.value as AggregationFunction)}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+                  >
+                    <option value="sum">Sum</option>
+                    <option value="avg">Average</option>
+                    <option value="median">Median</option>
+                    <option value="count">Count of Records</option>
+                    <option value="count_distinct">Distinct Count</option>
+                    <option value="min">Minimum</option>
+                    <option value="max">Maximum</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-300 block mb-1">
+                    Top Rows Limit
+                  </label>
+                  <select
+                    value={topN}
+                    onChange={e => setTopN(Number(e.target.value))}
+                    className="w-full bg-[#0B0D11] border border-[#2D3342] rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value={10}>Top 10 Rows</option>
+                    <option value={20}>Top 20 Rows</option>
+                    <option value={50}>Top 50 Rows</option>
+                    <option value={100}>Top 100 Rows</option>
+                    <option value={0}>All Rows</option>
                   </select>
                 </div>
               </div>

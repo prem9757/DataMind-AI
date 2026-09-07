@@ -26,6 +26,16 @@ export interface DesktopSaveResult {
   error?: string;
 }
 
+export interface DBConfig {
+  type: string;
+  host?: string;
+  port?: number | string;
+  database?: string;
+  user?: string;
+  password?: string;
+  options?: any;
+}
+
 export interface ElectronBridgeAPI {
   isElectron: boolean;
   platform: string;
@@ -65,6 +75,23 @@ export interface ElectronBridgeAPI {
   ai: {
     analyze: (payload: any) => Promise<any>;
   };
+  db: {
+    testConnection: (config: DBConfig) => Promise<{ status: 'success' | 'unsupported' | 'error' | 'idle' | 'testing'; message?: string }>;
+    getMetadata: (config: DBConfig) => Promise<{ tables: string[]; views?: string[] }>;
+    query: (config: DBConfig, query: string, limit?: number) => Promise<{ columns: string[]; rows: any[] }>;
+  };
+  web: {
+    fetchRest: (config: any) => Promise<any>;
+    fetchHtmlTables: (url: string) => Promise<any[]>;
+  };
+  credentials: {
+    save: (key: string, value: string) => Promise<boolean>;
+    load: (key: string) => Promise<string | null>;
+    delete: (key: string) => Promise<boolean>;
+  };
+  auth: {
+    oauth: (provider: string, config: any) => Promise<{ status: 'success' | 'error'; token?: string; message?: string }>;
+  };
 }
 
 declare global {
@@ -72,3 +99,4 @@ declare global {
     electronAPI?: ElectronBridgeAPI;
   }
 }
+

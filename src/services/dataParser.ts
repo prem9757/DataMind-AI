@@ -83,12 +83,25 @@ export function inferColumnType(values: any[]): ColumnType {
 export async function parseFile(file: File, targetSheet?: string): Promise<ParseResult> {
   const extension = file.name.split('.').pop()?.toLowerCase();
 
-  if (extension === 'csv' || extension === 'txt') {
+  if (extension === 'csv' || extension === 'txt' || extension === 'tsv') {
     return parseCsvFile(file);
   } else if (extension === 'xlsx' || extension === 'xls') {
     return parseExcelFile(file, targetSheet);
+  } else if (extension === 'json') {
+    return parseJsonFile(file);
   } else {
-    throw new Error(`Unsupported file format .${extension}. Please upload a CSV, XLSX, or XLS file.`);
+    throw new Error(`Unsupported file format .${extension}. Please upload a CSV, XLSX, XLS, or JSON file.`);
+  }
+}
+
+async function parseJsonFile(file: File): Promise<ParseResult> {
+  const text = await file.text();
+  try {
+    const parsed = JSON.parse(text);
+    const arrayData = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.data) ? parsed.data : [parsed]);
+    return parseRawArray(arrayData, file.name);
+  } catch (err: any) {
+    throw new Error(`Failed to parse JSON file: ${err.message}`);
   }
 }
 
@@ -196,16 +209,37 @@ async function parseExcelFile(file: File, targetSheet?: string): Promise<ParseRe
 
 export function parseRawArray(data: Record<string, any>[], name: string): ParseResult {
   if (!data || data.length === 0) {
-    throw new Error('Data array is empty');
+    throw new Error('Data array is empty or contains no records.');
   }
-  const columns = Object.keys(data[0]).filter(c => c.trim() !== '');
+
+  // Collect unique column keys across up to 100 sample records to support sparse JSON
+  const columnSet = new Set<string>();
+  const sampleLimit = Math.min(data.length, 100);
+  for (let i = 0; i < sampleLimit; i++) {
+    const item = data[i];
+    if (item && typeof item === 'object') {
+      Object.keys(item).forEach(k => {
+        const trimmed = k.trim();
+        if (trimmed) columnSet.add(trimmed);
+      });
+    }
+  }
+
+  const columns = columnSet.size > 0 ? Array.from(columnSet) : ['value'];
+  const rows = data.map(item => {
+    if (!item || typeof item !== 'object') {
+      return { value: item };
+    }
+    return item;
+  });
+
   return {
     fileName: name,
     fileSize: JSON.stringify(data).length,
     fileType: 'Dataset',
     columns,
-    rows: data,
-    totalRows: data.length,
+    rows,
+    totalRows: rows.length,
     totalColumns: columns.length
   };
 }

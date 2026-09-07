@@ -87,8 +87,21 @@ export class VisualizationEngine {
     } = config;
 
     // 1. Basic validation
-    if (!xAxisColumn && chartType !== 'histogram' && chartType !== 'box') {
+    if (!xAxisColumn && chartType !== 'histogram' && chartType !== 'box' && chartType !== 'kpi_card') {
       return this.errorResult(chartType, 'Please select an X-Axis / Category column to generate the visualization.');
+    }
+
+    if (chartType === 'kpi_card') {
+      const metricCol = yAxisColumn || xAxisColumn;
+      if (!metricCol || !columns.includes(metricCol)) {
+        return this.errorResult(chartType, 'Please select a column to calculate the KPI metric.');
+      }
+      return this.computeKpiCard(
+        workingRows,
+        metricCol,
+        aggregation as string,
+        customTitleOverride
+      );
     }
 
     if (chartType === 'histogram') {
@@ -270,7 +283,20 @@ export class VisualizationEngine {
       );
     }
 
-    // 6. Categorical / Dimension Aggregation Path (Bar, Horizontal Bar, Line, Area, Step Line, Pie, Donut, Radar, Polar Area, Radial Bar, Treemap)
+    if (chartType === 'table') {
+      return this.computeTable(
+        filteredRows,
+        xAxisColumn,
+        yAxisColumn,
+        secondaryColumn || groupByDimension,
+        aggregation as string,
+        topN,
+        sortBy,
+        customTitleOverride
+      );
+    }
+
+    // 6. Categorical / Dimension Aggregation Path (Bar, Column, Horizontal Bar, Line, Area, Step Line, Pie, Donut, Radar, Polar Area, Radial Bar, Treemap)
     return this.computeCategoricalChart(
       filteredRows,
       xAxisColumn,
@@ -677,6 +703,207 @@ export class VisualizationEngine {
         aggregateValue: rawVal,
         averageValue: rawVal,
         distinctGroups: 1
+      }
+    };
+  }
+
+  /**
+   * Computes Executive KPI Card (Single-metric high impact value with status and benchmark)
+   */
+  private static computeKpiCard(
+    rows: Record<string, any>[],
+    metricCol: string,
+    aggregation: string = 'sum',
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    const vals = rows.map(r => Number(r[metricCol])).filter(v => !isNaN(v) && isFinite(v));
+    let rawVal = 0;
+    const count = vals.length;
+    let minVal = 0;
+    let maxVal = 0;
+    let avgVal = 0;
+
+    if (count > 0) {
+      minVal = Math.min(...vals);
+      maxVal = Math.max(...vals);
+      avgVal = ss.mean(vals);
+      if (aggregation === 'mean' || aggregation === 'avg') rawVal = avgVal;
+      else if (aggregation === 'median') rawVal = ss.median(vals);
+      else if (aggregation === 'max') rawVal = maxVal;
+      else if (aggregation === 'min') rawVal = minVal;
+      else if (aggregation === 'count') rawVal = count;
+      else if (aggregation === 'count_distinct') rawVal = new Set(vals).size;
+      else rawVal = ss.sum(vals);
+    } else {
+      rawVal = rows.length;
+      avgVal = rawVal;
+    }
+
+    rawVal = Math.round(rawVal * 100) / 100;
+    const isCurrency = /sales|revenue|profit|cost|price|fee|budget|spend|salary|margin|amount/i.test(metricCol);
+    const isPct = /pct|percent|rate|ratio|share/i.test(metricCol);
+    const target = rawVal > 0 ? Math.round(rawVal * 1.15) : 100;
+    const progressPct = target > 0 ? Math.min(100, Math.round((rawVal / target) * 100)) : 100;
+    const status = progressPct >= 80 ? 'On Track' : progressPct >= 50 ? 'Moderate' : 'Under Review';
+
+    const formattedValue = isCurrency
+      ? (rawVal >= 1_000_000 ? `$${(rawVal / 1_000_000).toFixed(2)}M` : rawVal >= 1_000 ? `$${(rawVal / 1_000).toFixed(1)}k` : `$${rawVal.toLocaleString()}`)
+      : isPct
+      ? `${rawVal.toFixed(1)}%`
+      : rawVal >= 1_000_000 ? `${(rawVal / 1_000_000).toFixed(2)}M` : rawVal >= 1_000 ? `${(rawVal / 1_000).toFixed(1)}k` : rawVal.toLocaleString();
+
+    const title = customTitleOverride || `${this.formatAggregation(aggregation)} of ${this.formatName(metricCol)}`;
+
+    return {
+      isValid: true,
+      chartType: 'kpi_card',
+      title,
+      xAxisTitle: '',
+      yAxisTitle: this.formatName(metricCol),
+      description: `Executive single-metric KPI card calculating ${this.formatAggregation(aggregation)} across ${rows.length.toLocaleString()} records.`,
+      data: [{
+        name: this.formatName(metricCol),
+        metric: metricCol,
+        value: rawVal,
+        formattedValue,
+        aggregation: this.formatAggregation(aggregation),
+        count: rows.length,
+        min: minVal,
+        max: maxVal,
+        avg: Math.round(avgVal * 100) / 100,
+        target,
+        progressPct,
+        status,
+        isCurrency,
+        isPct
+      }],
+      seriesKeys: ['value'],
+      xAxisKey: 'name',
+      yAxisKey: 'value',
+      tableData: {
+        headers: ['Metric Name', 'Aggregated Value', 'Display Value', 'Calculation', 'Sample Count', 'Benchmark Target'],
+        rows: [[this.formatName(metricCol), rawVal.toLocaleString(), formattedValue, this.formatAggregation(aggregation), rows.length.toLocaleString(), target.toLocaleString()]]
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: rawVal,
+        averageValue: avgVal,
+        distinctGroups: 1
+      }
+    };
+  }
+
+  /**
+   * Computes Power BI-style Aggregated Data Table
+   */
+  private static computeTable(
+    rows: Record<string, any>[],
+    xCol: string,
+    yCol?: string,
+    groupByCol?: string,
+    aggregation: string = 'sum',
+    topN: number = 0,
+    sortBy: string = 'desc',
+    customTitleOverride?: string
+  ): VisualizationComputationResult {
+    // Group rows by xCol
+    const groupMap: Record<string, number[]> = {};
+    const groupCounts: Record<string, number> = {};
+
+    rows.forEach(r => {
+      const catVal = r[xCol] !== undefined && r[xCol] !== null ? String(r[xCol]).trim() : 'Blank';
+      if (!groupMap[catVal]) {
+        groupMap[catVal] = [];
+        groupCounts[catVal] = 0;
+      }
+      groupCounts[catVal]++;
+      if (yCol) {
+        const v = Number(r[yCol]);
+        if (!isNaN(v) && isFinite(v)) {
+          groupMap[catVal].push(v);
+        }
+      }
+    });
+
+    let entries = Object.keys(groupMap).map(cat => {
+      const vals = groupMap[cat];
+      let val = 0;
+      if (yCol && vals.length > 0) {
+        if (aggregation === 'mean' || aggregation === 'avg') val = ss.mean(vals);
+        else if (aggregation === 'median') val = ss.median(vals);
+        else if (aggregation === 'max') val = Math.max(...vals);
+        else if (aggregation === 'min') val = Math.min(...vals);
+        else if (aggregation === 'count_distinct') val = new Set(vals).size;
+        else val = ss.sum(vals);
+      } else {
+        val = groupCounts[cat];
+      }
+      val = Math.round(val * 100) / 100;
+      return {
+        category: cat,
+        name: cat,
+        value: val,
+        count: groupCounts[cat],
+        pctOfTotal: 0
+      };
+    });
+
+    const totalVal = ss.sum(entries.map(e => e.value)) || 1;
+    entries.forEach(e => {
+      e.pctOfTotal = Math.round((e.value / totalVal) * 1000) / 10;
+    });
+
+    // Sort
+    if (sortBy === 'asc') {
+      entries.sort((a, b) => a.value - b.value);
+    } else if (sortBy === 'desc') {
+      entries.sort((a, b) => b.value - a.value);
+    } else if (sortBy === 'alpha') {
+      entries.sort((a, b) => a.category.localeCompare(b.category));
+    }
+
+    if (topN > 0) {
+      entries = entries.slice(0, topN);
+    }
+
+    const title = customTitleOverride || (
+      yCol
+        ? `Summary Table: ${this.formatName(xCol)} by ${this.formatName(yCol)}`
+        : `Summary Table: ${this.formatName(xCol)}`
+    );
+
+    const isCurrency = yCol ? /sales|revenue|profit|cost|price|fee|budget|salary|amount/i.test(yCol) : false;
+
+    return {
+      isValid: true,
+      chartType: 'table',
+      title,
+      xAxisTitle: this.formatName(xCol),
+      yAxisTitle: yCol ? this.formatName(yCol) : 'Record Count',
+      description: `Tabular summary breakdown across ${entries.length} segments (${rows.length.toLocaleString()} total observations).`,
+      data: entries,
+      seriesKeys: ['value'],
+      xAxisKey: 'category',
+      yAxisKey: 'value',
+      tableData: {
+        headers: [
+          this.formatName(xCol),
+          yCol ? `${this.formatAggregation(aggregation)} of ${this.formatName(yCol)}` : 'Count',
+          'Records',
+          '% Share'
+        ],
+        rows: entries.map(e => [
+          e.category,
+          isCurrency ? `$${e.value.toLocaleString()}` : e.value.toLocaleString(),
+          e.count.toLocaleString(),
+          `${e.pctOfTotal}%`
+        ])
+      },
+      summaryMetrics: {
+        totalRecords: rows.length,
+        aggregateValue: totalVal,
+        averageValue: entries.length > 0 ? totalVal / entries.length : 0,
+        distinctGroups: entries.length
       }
     };
   }
@@ -1518,6 +1745,40 @@ export class VisualizationEngine {
       }
     } catch (e) {
       console.warn('Failed to remove from executive dashboard:', e);
+    }
+  }
+
+  public static reorderExecutiveDashboardVisualizations(orderedIds: string[]): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      localStorage.setItem(STORAGE_KEYS.EXECUTIVE_CHARTS, JSON.stringify(orderedIds));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('datamind_dashboard_updated'));
+      }
+    } catch (e) {
+      console.warn('Failed to reorder executive dashboard charts:', e);
+    }
+  }
+
+  public static setExecutiveDashboardItemWidth(
+    visualizationId: string,
+    width: 'full' | 'half' | 'third' | 'two_thirds'
+  ): void {
+    try {
+      if (typeof localStorage === 'undefined') return;
+      const current = this.getSavedVisualizations();
+      const updated = current.map(v => {
+        if (v.id === visualizationId) {
+          return { ...v, dashboardWidth: width, lastModified: Date.now() };
+        }
+        return v;
+      });
+      localStorage.setItem(STORAGE_KEYS.SAVED_VIZ, JSON.stringify(updated));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('datamind_dashboard_updated'));
+      }
+    } catch (e) {
+      console.warn('Failed to update visualization dashboard width:', e);
     }
   }
 

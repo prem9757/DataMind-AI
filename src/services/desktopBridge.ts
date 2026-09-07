@@ -307,6 +307,76 @@ class DesktopBridgeService {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
     return { canceled: false, success: true };
   }
+  public db = {
+    testConnection: async (config: any): Promise<{ status: 'success' | 'unsupported' | 'error' | 'idle' | 'testing'; message?: string }> => {
+      if (this.isElectron() && window.electronAPI?.db?.testConnection) {
+        return await window.electronAPI.db.testConnection(config);
+      }
+      return { status: 'error', message: 'Database connections require the Desktop application.' };
+    },
+    getMetadata: async (config: any): Promise<{ tables: string[]; views?: string[] }> => {
+      if (this.isElectron() && window.electronAPI?.db?.getMetadata) {
+        return await window.electronAPI.db.getMetadata(config);
+      }
+      throw new Error('Database connections require the Desktop application.');
+    },
+    query: async (config: any, query: string, limit?: number): Promise<{ columns: string[]; rows: any[] }> => {
+      if (this.isElectron() && window.electronAPI?.db?.query) {
+        return await window.electronAPI.db.query(config, query, limit);
+      }
+      throw new Error('Database connections require the Desktop application.');
+    }
+  };
+
+  public web = {
+    fetchRest: async (config: any): Promise<any> => {
+      if (this.isElectron() && window.electronAPI?.web?.fetchRest) {
+        return await window.electronAPI.web.fetchRest(config);
+      }
+      // Fallback for browser
+      const { url, method = 'GET', headers, body } = config;
+      const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    },
+    fetchHtmlTables: async (url: string): Promise<any[]> => {
+      if (this.isElectron() && window.electronAPI?.web?.fetchHtmlTables) {
+        return await window.electronAPI.web.fetchHtmlTables(url);
+      }
+      throw new Error('Web table extraction requires the Desktop application to bypass CORS.');
+    }
+  };
+
+  public credentials = {
+    save: async (key: string, value: string): Promise<boolean> => {
+      if (this.isElectron() && window.electronAPI?.credentials?.save) {
+        return await window.electronAPI.credentials.save(key, value);
+      }
+      return false; // Safely ignore in browser
+    },
+    load: async (key: string): Promise<string | null> => {
+      if (this.isElectron() && window.electronAPI?.credentials?.load) {
+        return await window.electronAPI.credentials.load(key);
+      }
+      return null;
+    },
+    delete: async (key: string): Promise<boolean> => {
+      if (this.isElectron() && window.electronAPI?.credentials?.delete) {
+        return await window.electronAPI.credentials.delete(key);
+      }
+      return false;
+    }
+  };
+
+  public auth = {
+    oauth: async (provider: string, config: any): Promise<{ status: 'success' | 'error'; token?: string; message?: string }> => {
+      if (this.isElectron() && window.electronAPI?.auth?.oauth) {
+        return await window.electronAPI.auth.oauth(provider, config);
+      }
+      return { status: 'error', message: 'Desktop runtime required for OAuth.' };
+    }
+  };
 }
 
 export const desktopBridge = new DesktopBridgeService();
+

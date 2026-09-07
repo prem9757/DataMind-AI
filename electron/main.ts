@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'os';
 import { GoogleGenAI } from '@google/genai';
+import { registerDBHandlers } from './dbHandlers';
+import { registerWebHandlers } from './webHandlers';
+import { registerAuthHandlers } from './authHandlers';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -437,6 +440,9 @@ Return a valid JSON object matching this structure:
 
 app.whenReady().then(() => {
   registerIpcHandlers();
+  registerDBHandlers();
+  registerWebHandlers();
+  registerAuthHandlers();
   mainWindow = createMainWindow();
 
   app.on('activate', () => {

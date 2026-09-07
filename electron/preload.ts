@@ -63,6 +63,23 @@ export interface ElectronAPI {
   ai: {
     analyze: (payload: any) => Promise<any>;
   };
+  db: {
+    testConnection: (config: any) => Promise<{ status: string; message?: string }>;
+    getMetadata: (config: any) => Promise<{ tables: string[]; views?: string[] }>;
+    query: (config: any, query: string, limit?: number) => Promise<{ columns: string[]; rows: any[] }>;
+  };
+  web: {
+    fetchRest: (config: any) => Promise<any>;
+    fetchHtmlTables: (url: string) => Promise<any[]>;
+  };
+  credentials: {
+    save: (key: string, value: string) => Promise<boolean>;
+    load: (key: string) => Promise<string | null>;
+    delete: (key: string) => Promise<boolean>;
+  };
+  auth: {
+    oauth: (provider: string, config: any) => Promise<{ status: 'success' | 'error'; token?: string; message?: string }>;
+  };
 }
 
 const electronAPI: ElectronAPI = {
@@ -87,6 +104,23 @@ const electronAPI: ElectronAPI = {
   },
   ai: {
     analyze: (payload) => ipcRenderer.invoke('ai:gemini-analyze', payload),
+  },
+  db: {
+    testConnection: (config: any) => ipcRenderer.invoke('db:test-connection', config),
+    getMetadata: (config: any) => ipcRenderer.invoke('db:get-metadata', config),
+    query: (config: any, query: string, limit?: number) => ipcRenderer.invoke('db:query', { config, query, limit }),
+  },
+  web: {
+    fetchRest: (config: any) => ipcRenderer.invoke('web:fetch-rest', config),
+    fetchHtmlTables: (url: string) => ipcRenderer.invoke('web:fetch-html-tables', url),
+  },
+  credentials: {
+    save: (key: string, value: string) => ipcRenderer.invoke('credentials:save', { key, value }),
+    load: (key: string) => ipcRenderer.invoke('credentials:load', key),
+    delete: (key: string) => ipcRenderer.invoke('credentials:delete', key),
+  },
+  auth: {
+    oauth: (provider: string, config: any) => ipcRenderer.invoke('auth:oauth', { provider, config }),
   },
 };
 

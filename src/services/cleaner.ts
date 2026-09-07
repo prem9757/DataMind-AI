@@ -943,7 +943,7 @@ export function undoLastTransformation(dataset: DatasetState): DatasetState {
   if (dataset.transformations.length === 0) return dataset;
 
   const remainingTransformations = dataset.transformations.slice(0, -1);
-  let currentRows = JSON.parse(JSON.stringify(dataset.originalRows));
+  let currentRows = dataset.originalRows.map(r => ({ ...r }));
   let currentCols = Object.keys(currentRows[0] || {});
 
   // Replay remaining transformations from original state
@@ -1039,7 +1039,7 @@ export function undoLastTransformation(dataset: DatasetState): DatasetState {
 }
 
 export function revertToOriginal(dataset: DatasetState): DatasetState {
-  const originalCopy = JSON.parse(JSON.stringify(dataset.originalRows));
+  const originalCopy = dataset.originalRows.map(r => ({ ...r }));
   const columns = Object.keys(originalCopy[0] || {});
   const profiles = profileDataset(originalCopy, columns);
   const quality = auditDataQuality(originalCopy, columns, profiles);

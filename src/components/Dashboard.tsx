@@ -19,7 +19,12 @@ import {
   Edit3,
   X,
   AlertTriangle,
-  FileText
+  FileText,
+  ChevronUp,
+  ChevronDown,
+  Filter,
+  Sliders,
+  Grid
 } from 'lucide-react';
 import { DatasetState } from '../types/dataset';
 import { SavedVisualization } from '../types/visualization';
@@ -152,6 +157,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
     setChartToDeleteFromExec(null);
     loadExecutiveCharts();
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  // Executive Slicer / Business Filter State
+  const [slicerColumn, setSlicerColumn] = useState<string>('');
+  const [slicerValue, setSlicerValue] = useState<string>('all');
+
+  const slicerOptions = useMemo(() => {
+    if (!slicerColumn || !workingRows.length) return [];
+    const set = new Set<string>();
+    for (let i = 0; i < Math.min(workingRows.length, 5000); i++) {
+      const val = workingRows[i][slicerColumn];
+      if (val !== undefined && val !== null && val !== '') {
+        set.add(String(val));
+        if (set.size >= 40) break;
+      }
+    }
+    return Array.from(set).sort();
+  }, [workingRows, slicerColumn]);
+
+  const handleMoveExecutiveChart = (index: number, direction: 'up' | 'down') => {
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= executiveVisualizations.length) return;
+    const ids = executiveVisualizations.map(v => v.id);
+    const [moved] = ids.splice(index, 1);
+    ids.splice(targetIndex, 0, moved);
+    VisualizationEngine.reorderExecutiveDashboardVisualizations(ids);
+  };
+
+  const handleSetChartWidth = (vizId: string, width: 'full' | 'half' | 'third') => {
+    VisualizationEngine.setExecutiveDashboardItemWidth(vizId, width);
   };
 
   // Top 4 clean KPIs
@@ -382,138 +417,283 @@ export const Dashboard: React.FC<DashboardProps> = ({
           </button>
         </div>
 
-        {/* Dynamic Synchronized Dashboard Charts with Automated Summaries */}
+        {/* Business Filter / Slicer Toolbar for Executive Dashboard */}
+        {executiveVisualizations.length > 0 && catCols.length > 0 && (
+          <div className="bg-[#12151C] border border-[#252A36] rounded-xl p-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5 text-amber-400" />
+                <span>Dashboard Slicer:</span>
+              </span>
+
+              {/* Slicer Column Selector */}
+              <select
+                value={slicerColumn}
+                onChange={e => {
+                  setSlicerColumn(e.target.value);
+                  setSlicerValue('all');
+                }}
+                className="bg-[#0B0D11] border border-[#2B3242] rounded-lg px-2.5 py-1 text-xs text-slate-200 focus:outline-none focus:border-amber-500 font-medium"
+              >
+                <option value="">-- Select Field to Slice --</option>
+                {catCols.map(c => (
+                  <option key={c} value={c}>
+                    Aa {c}
+                  </option>
+                ))}
+              </select>
+
+              {/* Slicer Value Selector */}
+              {slicerColumn && (
+                <div className="flex items-center gap-2">
+                  <select
+                    value={slicerValue}
+                    onChange={e => setSlicerValue(e.target.value)}
+                    className="bg-[#0B0D11] border border-amber-500/50 rounded-lg px-2.5 py-1 text-xs text-amber-300 focus:outline-none focus:border-amber-500 font-semibold"
+                  >
+                    <option value="all">All {slicerColumn}s</option>
+                    {slicerOptions.map(opt => (
+                      <option key={opt} value={opt}>
+                        {opt}
+                      </option>
+                    ))}
+                  </select>
+
+                  {slicerValue !== 'all' && (
+                    <button
+                      onClick={() => setSlicerValue('all')}
+                      className="px-2 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-[11px] font-semibold transition"
+                    >
+                      Clear Slice
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {slicerColumn && slicerValue !== 'all' && (
+              <span className="text-[11px] font-mono text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                Active Filter: {slicerColumn} = "{slicerValue}"
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Dynamic Synchronized Dashboard Charts with Reordering, Resizing & Automated Summaries */}
         {executiveVisualizations.length > 0 ? (
-          <div className="space-y-6">
-            {executiveVisualizations.map(viz => {
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {executiveVisualizations.map((viz, index) => {
+              const activeConfig = {
+                ...viz.config,
+                filters:
+                  slicerColumn && slicerValue !== 'all'
+                    ? [
+                        ...(viz.config.filters || []).filter(f => f.column !== slicerColumn),
+                        {
+                          id: `slicer_${slicerColumn}`,
+                          column: slicerColumn,
+                          operator: 'equals' as const,
+                          value: slicerValue
+                        }
+                      ]
+                    : viz.config.filters
+              };
+
               const computed = VisualizationEngine.compute(
                 dataset,
-                viz.config,
+                activeConfig,
                 viz.chartType,
                 viz.customTitle || viz.name
               );
               const summary = VisualizationEngine.generateChartExecutiveSummary(computed, viz, dataset);
 
+              const cardColSpan =
+                viz.dashboardWidth === 'half'
+                  ? 'lg:col-span-6'
+                  : viz.dashboardWidth === 'third'
+                  ? 'lg:col-span-4'
+                  : 'lg:col-span-12';
+
               return (
                 <div
                   key={viz.id}
-                  className="bg-[#12151C] border border-[#252A36] hover:border-amber-500/40 rounded-2xl p-5 shadow-xl transition space-y-4 group"
+                  className={`${cardColSpan} bg-[#12151C] border border-[#252A36] hover:border-amber-500/40 rounded-2xl p-5 shadow-xl transition space-y-4 group flex flex-col justify-between`}
                 >
-                  {/* Card Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222734]">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                          {viz.chartType.replace('_', ' ')}
-                        </span>
-                        <h3 className="text-sm font-bold text-slate-100 group-hover:text-amber-300 transition">
-                          {viz.customTitle || viz.name}
-                        </h3>
-                      </div>
-                      {viz.description && (
-                        <p className="text-xs text-slate-400 max-w-xl">
-                          {viz.description}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        onClick={() => {
-                          const prompt = `Provide an executive strategic briefing for the chart "${viz.customTitle || viz.name}". Key context: ${summary.headline}. Narrative: ${summary.narrative}`;
-                          onSelectQuery(prompt);
-                        }}
-                        className="px-2.5 py-1 rounded-lg bg-[#181D26] hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-[#2B3242] text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
-                        title="Ask AI about this executive chart"
-                      >
-                        <Bot className="w-3 h-3" />
-                        <span>Ask AI</span>
-                      </button>
-                      <button
-                        onClick={() => onNavigate('visualizations')}
-                        className="p-1.5 rounded-lg bg-[#181D26] hover:bg-[#202634] text-slate-400 hover:text-amber-400 border border-[#2B3242] transition cursor-pointer"
-                        title="Open in Data Visualisation Studio"
-                      >
-                        <Edit3 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setChartToDeleteFromExec(viz)}
-                        className="p-1.5 rounded-lg bg-[#181D26] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-[#2B3242] hover:border-rose-500/30 transition cursor-pointer"
-                        title="Delete or remove chart"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Split Body: Chart Canvas (Left) + Automated Executive Summary (Right) */}
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
-                    {/* Left Canvas */}
-                    <div className="lg:col-span-7 bg-[#0B0D11] border border-[#1E232E] rounded-xl p-3 flex flex-col justify-center">
-                      <ChartViewer
-                        type={computed.chartType as any}
-                        title=""
-                        data={computed.data}
-                        xAxisKey={computed.xAxisKey}
-                        yAxisKey={computed.yAxisKey}
-                        keys={computed.seriesKeys}
-                        xAxisLabel={computed.xAxisTitle}
-                        yAxisLabel={computed.yAxisTitle}
-                        height={270}
-                        allowFullscreen={true}
-                      />
-                    </div>
-
-                    {/* Right Summary Panel */}
-                    <div className="lg:col-span-5 bg-[#0F1218] border border-[#222836] rounded-xl p-4 flex flex-col justify-between space-y-3">
-                      <div className="space-y-3">
-                        <div className="flex items-center justify-between border-b border-[#222734] pb-2">
-                          <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
-                            <Sparkles className="w-3.5 h-3.5" />
-                            <span className="uppercase tracking-wider text-[10px]">Automated Executive Summary</span>
-                          </div>
-                          <span className="text-[10px] text-slate-500">Auto Computed</span>
+                  <div className="space-y-4">
+                    {/* Card Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#222734]">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono font-bold uppercase px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            {viz.chartType.replace('_', ' ')}
+                          </span>
+                          <h3 className="text-sm font-bold text-slate-100 group-hover:text-amber-300 transition">
+                            {viz.customTitle || viz.name}
+                          </h3>
                         </div>
-
-                        {/* Headline */}
-                        <div className="space-y-1">
-                          <h4 className="text-xs font-bold text-slate-100 leading-snug">
-                            {summary.headline}
-                          </h4>
-                          <p className="text-[11px] text-slate-300 leading-relaxed">
-                            {summary.narrative}
+                        {viz.description && (
+                          <p className="text-xs text-slate-400 max-w-xl">
+                            {viz.description}
                           </p>
-                        </div>
-
-                        {/* Key Insights */}
-                        {summary.keyInsights && summary.keyInsights.length > 0 && (
-                          <div className="space-y-1.5 pt-1">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                              Strategic Highlights
-                            </span>
-                            <ul className="space-y-1">
-                              {summary.keyInsights.map((ins, i) => (
-                                <li key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
-                                  <span className="text-amber-400 font-bold mt-0.5">•</span>
-                                  <span>{ins}</span>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
                         )}
                       </div>
 
-                      {/* Metrics Grid */}
-                      <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#222734]">
-                        {summary.metrics.map((m, i) => (
-                          <div key={i} className="bg-[#141820] border border-[#232936] rounded-lg p-2 space-y-0.5">
-                            <span className="text-[10px] text-slate-400 block truncate">{m.label}</span>
-                            <span className="text-xs font-bold text-slate-100 font-mono block truncate">{m.value}</span>
-                            {m.helper && (
-                              <span className="text-[9px] text-amber-400/80 block truncate">{m.helper}</span>
-                            )}
+                      {/* Header Controls: Reorder, Resize, Ask AI, Edit, Remove */}
+                      <div className="flex items-center flex-wrap gap-1.5 shrink-0">
+                        {/* Reorder Buttons */}
+                        <div className="flex items-center rounded-lg bg-[#181D26] border border-[#2B3242] p-0.5">
+                          <button
+                            onClick={() => handleMoveExecutiveChart(index, 'up')}
+                            disabled={index === 0}
+                            className="p-1 text-slate-400 hover:text-amber-400 disabled:opacity-30 transition cursor-pointer"
+                            title="Move Chart Up"
+                          >
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleMoveExecutiveChart(index, 'down')}
+                            disabled={index === executiveVisualizations.length - 1}
+                            className="p-1 text-slate-400 hover:text-amber-400 disabled:opacity-30 transition cursor-pointer"
+                            title="Move Chart Down"
+                          >
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Width Resize Toggle */}
+                        <div className="flex items-center rounded-lg bg-[#181D26] border border-[#2B3242] p-0.5 text-[10px] font-semibold">
+                          <button
+                            onClick={() => handleSetChartWidth(viz.id, 'full')}
+                            className={`px-1.5 py-0.5 rounded ${
+                              !viz.dashboardWidth || viz.dashboardWidth === 'full'
+                                ? 'bg-amber-500 text-slate-950 font-bold'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                            title="Full Width (100%)"
+                          >
+                            Full
+                          </button>
+                          <button
+                            onClick={() => handleSetChartWidth(viz.id, 'half')}
+                            className={`px-1.5 py-0.5 rounded ${
+                              viz.dashboardWidth === 'half'
+                                ? 'bg-amber-500 text-slate-950 font-bold'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                            title="Half Width (50%)"
+                          >
+                            1/2
+                          </button>
+                          <button
+                            onClick={() => handleSetChartWidth(viz.id, 'third')}
+                            className={`px-1.5 py-0.5 rounded ${
+                              viz.dashboardWidth === 'third'
+                                ? 'bg-amber-500 text-slate-950 font-bold'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                            title="One-Third Width (33%)"
+                          >
+                            1/3
+                          </button>
+                        </div>
+
+                        <button
+                          onClick={() => {
+                            const prompt = `Provide an executive strategic briefing for the chart "${viz.customTitle || viz.name}". Key context: ${summary.headline}. Narrative: ${summary.narrative}`;
+                            onSelectQuery(prompt);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-[#181D26] hover:bg-amber-500/20 text-amber-400 hover:text-amber-300 border border-[#2B3242] text-[11px] font-semibold transition flex items-center gap-1 cursor-pointer"
+                          title="Ask AI about this executive chart"
+                        >
+                          <Bot className="w-3 h-3" />
+                          <span>Ask AI</span>
+                        </button>
+                        <button
+                          onClick={() => onNavigate('visualizations')}
+                          className="p-1.5 rounded-lg bg-[#181D26] hover:bg-[#202634] text-slate-400 hover:text-amber-400 border border-[#2B3242] transition cursor-pointer"
+                          title="Open in Data Visualisation Studio"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => setChartToDeleteFromExec(viz)}
+                          className="p-1.5 rounded-lg bg-[#181D26] hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 border border-[#2B3242] hover:border-rose-500/30 transition cursor-pointer"
+                          title="Delete or remove chart"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Split Body: Chart Canvas + Automated Executive Summary */}
+                    <div className={`grid grid-cols-1 ${viz.dashboardWidth === 'third' ? 'gap-3' : 'lg:grid-cols-12 gap-5'} items-stretch`}>
+                      {/* Left Canvas */}
+                      <div className={`${viz.dashboardWidth === 'third' ? 'w-full' : 'lg:col-span-7'} bg-[#0B0D11] border border-[#1E232E] rounded-xl p-3 flex flex-col justify-center`}>
+                        <ChartViewer
+                          type={computed.chartType as any}
+                          title=""
+                          data={computed.data}
+                          xAxisKey={computed.xAxisKey}
+                          yAxisKey={computed.yAxisKey}
+                          keys={computed.seriesKeys}
+                          xAxisLabel={computed.xAxisTitle}
+                          yAxisLabel={computed.yAxisTitle}
+                          height={viz.dashboardWidth === 'third' ? 220 : 270}
+                          allowFullscreen={true}
+                        />
+                      </div>
+
+                      {/* Right Summary Panel */}
+                      <div className={`${viz.dashboardWidth === 'third' ? 'w-full' : 'lg:col-span-5'} bg-[#0F1218] border border-[#222836] rounded-xl p-4 flex flex-col justify-between space-y-3`}>
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between border-b border-[#222734] pb-2">
+                            <div className="flex items-center gap-1.5 text-amber-400 font-bold text-xs">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span className="uppercase tracking-wider text-[10px]">Automated Executive Summary</span>
+                            </div>
+                            <span className="text-[10px] text-slate-500">Auto Computed</span>
                           </div>
-                        ))}
+
+                          {/* Headline */}
+                          <div className="space-y-1">
+                            <h4 className="text-xs font-bold text-slate-100 leading-snug">
+                              {summary.headline}
+                            </h4>
+                            <p className="text-[11px] text-slate-300 leading-relaxed">
+                              {summary.narrative}
+                            </p>
+                          </div>
+
+                          {/* Key Insights */}
+                          {summary.keyInsights && summary.keyInsights.length > 0 && (
+                            <div className="space-y-1.5 pt-1">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                                Strategic Highlights
+                              </span>
+                              <ul className="space-y-1">
+                                {summary.keyInsights.map((ins, i) => (
+                                  <li key={i} className="text-[11px] text-slate-300 flex items-start gap-1.5">
+                                    <span className="text-amber-400 font-bold mt-0.5">•</span>
+                                    <span>{ins}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Metrics Grid */}
+                        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-[#222734]">
+                          {summary.metrics.map((m, i) => (
+                            <div key={i} className="bg-[#141820] border border-[#232936] rounded-lg p-2 space-y-0.5">
+                              <span className="text-[10px] text-slate-400 block truncate">{m.label}</span>
+                              <span className="text-xs font-bold text-slate-100 font-mono block truncate">{m.value}</span>
+                              {m.helper && (
+                                <span className="text-[9px] text-amber-400/80 block truncate">{m.helper}</span>
+                              )}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>

@@ -308,6 +308,7 @@ export interface RecommendedAnalysis {
 export type ChartType = 
   | 'bar' 
   | 'horizontal_bar' 
+  | 'column'
   | 'line' 
   | 'area' 
   | 'step_line'
@@ -326,7 +327,9 @@ export type ChartType =
   | 'composed'
   | 'gauge'
   | 'radial_bar'
-  | 'kpi';
+  | 'kpi'
+  | 'kpi_card'
+  | 'table';
 
 export interface BusinessKPI {
   id: string;

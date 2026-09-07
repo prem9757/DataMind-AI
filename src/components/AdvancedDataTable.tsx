@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useDeferredValue } from 'react';
 import {
   Search,
   ArrowUpDown,
@@ -56,17 +56,22 @@ export function AdvancedDataTable({
   // Large dataset sampling badge detection
   const isLargeDataset = rows.length > 50000;
 
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const deferredColumnFilter = useDeferredValue(columnFilter);
+  const deferredSortCol = useDeferredValue(sortCol);
+  const deferredSortDir = useDeferredValue(sortDir);
+
   // Filter & Search
   const filteredRows = useMemo(() => {
     return rows.filter(row => {
       // Global Search
-      if (searchTerm) {
+      if (deferredSearchTerm) {
         const rowStr = Object.values(row).map(v => String(v ?? '')).join(' ').toLowerCase();
-        if (!rowStr.includes(searchTerm.toLowerCase())) return false;
+        if (!rowStr.includes(deferredSearchTerm.toLowerCase())) return false;
       }
 
       // Column Filters
-      for (const [col, filterVal] of Object.entries(columnFilter)) {
+      for (const [col, filterVal] of Object.entries(deferredColumnFilter)) {
         if (!filterVal) continue;
         const cellVal = String(row[col] ?? '').toLowerCase();
         if (!cellVal.includes(String(filterVal).toLowerCase())) return false;
@@ -74,29 +79,29 @@ export function AdvancedDataTable({
 
       return true;
     });
-  }, [rows, searchTerm, columnFilter]);
+  }, [rows, deferredSearchTerm, deferredColumnFilter]);
 
   // Sorting
   const sortedRows = useMemo(() => {
-    if (!sortCol) return filteredRows;
+    if (!deferredSortCol) return filteredRows;
 
     return [...filteredRows].sort((a, b) => {
-      const valA = a[sortCol];
-      const valB = b[sortCol];
+      const valA = a[deferredSortCol];
+      const valB = b[deferredSortCol];
 
       if (valA === valB) return 0;
       if (valA === null || valA === undefined) return 1;
       if (valB === null || valB === undefined) return -1;
 
       if (typeof valA === 'number' && typeof valB === 'number') {
-        return sortDir === 'asc' ? valA - valB : valB - valA;
+        return deferredSortDir === 'asc' ? valA - valB : valB - valA;
       }
 
       const strA = String(valA).toLowerCase();
       const strB = String(valB).toLowerCase();
-      return sortDir === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
+      return deferredSortDir === 'asc' ? strA.localeCompare(strB) : strB.localeCompare(strA);
     });
-  }, [filteredRows, sortCol, sortDir]);
+  }, [filteredRows, deferredSortCol, deferredSortDir]);
 
   // Pagination
   const totalPages = Math.ceil(sortedRows.length / pageSize) || 1;

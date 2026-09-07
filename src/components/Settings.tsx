@@ -20,6 +20,7 @@ import {
 import { DatasetState } from '../types/dataset';
 import { SessionManager, AppSettings } from '../services/sessionManager';
 import { desktopBridge } from '../services/desktopBridge';
+import { ConnectionManager } from './ConnectionManager';
 
 interface SettingsProps {
   dataset: DatasetState | null;
@@ -29,7 +30,7 @@ interface SettingsProps {
 
 export function Settings({ dataset, onResetWorkspace, onNavigateToSection }: SettingsProps) {
   const [settings, setSettings] = useState<AppSettings>(() => SessionManager.loadSettings());
-  const [activeTab, setActiveTab] = useState<'general' | 'performance' | 'ai' | 'security' | 'shortcuts'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'performance' | 'ai' | 'security' | 'shortcuts' | 'connections'>('general');
   const [saveToast, setSaveToast] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -127,6 +128,14 @@ export function Settings({ dataset, onResetWorkspace, onNavigateToSection }: Set
           }`}
         >
           <Keyboard className="w-3.5 h-3.5" /> Shortcuts
+        </button>
+        <button
+          onClick={() => setActiveTab('connections')}
+          className={`px-3.5 py-1.5 rounded-lg transition-colors flex items-center gap-2 ${
+            activeTab === 'connections' ? 'bg-amber-500 text-slate-950 font-bold' : 'text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Database className="w-3.5 h-3.5" /> Connections
         </button>
       </div>
 
@@ -384,6 +393,11 @@ export function Settings({ dataset, onResetWorkspace, onNavigateToSection }: Set
             ))}
           </div>
         </div>
+      )}
+
+      {/* Tab 6: Connections */}
+      {activeTab === 'connections' && (
+        <ConnectionManager />
       )}
 
       {/* Danger Zone: Workspace Reset */}
