@@ -127,72 +127,72 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
 
   // Initial State from editingViz or smart defaults
   const [chartType, setChartType] = useState<ExtendedChartType>(() => {
-    if (editingViz) return editingViz.chartType;
+    if (editingViz?.chartType) return editingViz.chartType;
     if (dateCols.length > 0) return 'line';
     return 'bar';
   });
 
   const [xAxisColumn, setXAxisColumn] = useState<string>(() => {
-    if (editingViz) return editingViz.config.xAxisColumn;
+    if (editingViz?.config?.xAxisColumn) return editingViz.config.xAxisColumn;
     if (dateCols.length > 0) return dateCols[0];
     if (catCols.length > 0) return catCols[0];
     return columns[0] || '';
   });
 
   const [yAxisColumn, setYAxisColumn] = useState<string>(() => {
-    if (editingViz) return editingViz.config.yAxisColumn;
+    if (editingViz?.config?.yAxisColumn) return editingViz.config.yAxisColumn;
     if (numCols.length > 0) return numCols[0];
     return columns[1] || '';
   });
 
   const [secondaryColumn, setSecondaryColumn] = useState<string>(() => {
-    if (editingViz) return editingViz.config.secondaryColumn || '';
+    if (editingViz?.config?.secondaryColumn) return editingViz.config.secondaryColumn || '';
     return '';
   });
 
   const [aggregation, setAggregation] = useState<AggregationFunction>(() => {
-    if (editingViz) return (editingViz.config.aggregation as AggregationFunction) || 'sum';
+    if (editingViz?.config?.aggregation) return (editingViz.config.aggregation as AggregationFunction) || 'sum';
     return 'sum';
   });
 
   const [timeGranularity, setTimeGranularity] = useState<TimeGranularity>(() => {
-    if (editingViz) return editingViz.config.timeGranularity || 'monthly';
+    if (editingViz?.config?.timeGranularity) return editingViz.config.timeGranularity || 'monthly';
     return 'monthly';
   });
 
   const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>(() => {
-    if (editingViz) return editingViz.config.dateRange?.preset || 'all_time';
+    if (editingViz?.config?.dateRange?.preset) return editingViz.config.dateRange.preset || 'all_time';
     return 'all_time';
   });
 
   const [customStartDate, setCustomStartDate] = useState<string>(() => {
-    return editingViz?.config.dateRange?.startDate || '';
+    return editingViz?.config?.dateRange?.startDate || '';
   });
   const [customEndDate, setCustomEndDate] = useState<string>(() => {
-    return editingViz?.config.dateRange?.endDate || '';
+    return editingViz?.config?.dateRange?.endDate || '';
   });
 
   const [groupByDimension, setGroupByDimension] = useState<string>(() => {
-    if (editingViz) return editingViz.config.groupByDimension || '';
+    if (editingViz?.config?.groupByDimension) return editingViz.config.groupByDimension || '';
     return '';
   });
 
   const [topN, setTopN] = useState<number>(() => {
-    if (editingViz) return editingViz.config.topN || 0;
+    if (editingViz?.config?.topN) return editingViz.config.topN || 0;
     return 10;
   });
 
   const [sortBy, setSortBy] = useState<'asc' | 'desc' | 'none'>(() => {
-    if (editingViz) return editingViz.config.sortBy || 'desc';
+    if (editingViz?.config?.sortBy) return editingViz.config.sortBy || 'desc';
     return 'desc';
   });
 
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>(() => {
-    return editingViz?.config.comparisonMode || 'none';
+    return editingViz?.config?.comparisonMode || 'none';
   });
 
   const [movingAverageWindow, setMovingAverageWindow] = useState<number>(() => {
-    return editingViz?.config.movingAverageWindow || 3;
+    return editingViz?.config?.movingAverageWindow || 3;
   });
 
   const [customTitle, setCustomTitle] = useState<string>(() => {
@@ -208,7 +208,7 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
 
   // Filters state
   const [filters, setFilters] = useState<VisualizationFilter[]>(() => {
-    return editingViz?.config.filters || [];
+    return editingViz?.config?.filters || [];
   });
 
   // Check if X-Axis is currently a Date
@@ -493,8 +493,10 @@ export const VisualizationBuilder: React.FC<VisualizationBuilderProps> = ({
                 <CheckCircle2 className="w-3 h-3 text-emerald-400" />
               </div>
               <div className="mt-1 truncate">
-                <span className="text-xs font-bold text-slate-200 block truncate" title={dataset.name}>{dataset.name}</span>
-                <span className="text-[10px] text-slate-400 font-mono">{dataset.rowCount.toLocaleString()} rows</span>
+                <span className="text-xs font-bold text-slate-200 block truncate" title={dataset?.name || 'Dataset'}>{dataset?.name || 'Dataset'}</span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {(dataset?.workingRows?.length ?? dataset?.originalRows?.length ?? 0).toLocaleString()} rows
+                </span>
               </div>
             </div>
 

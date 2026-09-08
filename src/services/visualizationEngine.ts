@@ -1822,8 +1822,8 @@ export class VisualizationEngine {
     const data = computed.data || [];
     const chartType = computed.chartType;
     const title = computed.title || viz?.name || 'Executive Chart';
-    const xCol = computed.xAxisKey || viz?.config.xAxisColumn || 'Category';
-    const yCol = computed.yAxisKey || computed.seriesKeys?.[0] || viz?.config.yAxisColumn || 'Value';
+    const xCol = computed.xAxisKey || viz?.config?.xAxisColumn || 'Category';
+    const yCol = computed.yAxisKey || computed.seriesKeys?.[0] || viz?.config?.yAxisColumn || 'Value';
 
     const formatNum = (val: number): string => {
       if (val === null || val === undefined || isNaN(val)) return '0';

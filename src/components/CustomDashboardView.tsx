@@ -496,7 +496,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
 
       try {
         // Build dynamic filters compatible with this chart
-        const effectiveFilters = [...(viz.config.filters || [])];
+        const effectiveFilters = [...(viz.config?.filters || [])];
 
         activeFilters.forEach(f => {
           if (f.value && f.value !== 'ALL' && dataset.columns.includes(f.column)) {
@@ -510,8 +510,8 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
         });
 
         const effectiveConfig = {
-          ...viz.config,
-          dateRange: globalDateFilter !== 'all_time' ? { preset: globalDateFilter } : viz.config.dateRange,
+          ...(viz.config || {}),
+          dateRange: globalDateFilter !== 'all_time' ? { preset: globalDateFilter } : viz.config?.dateRange,
           filters: effectiveFilters
         };
 
@@ -563,7 +563,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
       .map(f => `${f.column} = "${f.value}"`)
       .join(', ');
 
-    const prompt = `Analyze this specific chart from my dashboard: "${computed?.title || viz.name}" (Type: ${viz.chartType}, Dimension: ${viz.config.xAxisColumn}, Metric: ${viz.config.yAxisColumn || 'Count'}, Aggregation: ${viz.config.aggregation || 'sum'}${filterSummary ? `, Active Filters: ${filterSummary}` : ''}). What key patterns, top contributors, anomalies, and business implications are evident?`;
+    const prompt = `Analyze this specific chart from my dashboard: "${computed?.title || viz.name}" (Type: ${viz.chartType}, Dimension: ${viz.config?.xAxisColumn || 'Category'}, Metric: ${viz.config?.yAxisColumn || 'Count'}, Aggregation: ${viz.config?.aggregation || 'sum'}${filterSummary ? `, Active Filters: ${filterSummary}` : ''}). What key patterns, top contributors, anomalies, and business implications are evident?`;
 
     if (onSelectQueryForAI) {
       onSelectQueryForAI(prompt);
@@ -1629,7 +1629,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                   <div className="mt-2.5 pt-2 border-t border-[#252A36] flex items-center justify-between text-[10px] text-slate-400">
                     <div className="flex items-center gap-2 truncate">
                       <span className="font-mono truncate">
-                        {viz.config.xAxisColumn} {viz.config.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
+                        {viz.config?.xAxisColumn || 'Category'} {viz.config?.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
                       </span>
                       {execVizIds.has(viz.id) && (
                         <span className="inline-flex items-center gap-1 text-[9px] font-bold font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
@@ -1751,7 +1751,7 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
                               <h4 className="text-xs font-bold text-slate-200">{viz.name}</h4>
                             </div>
                             <p className="text-[11px] text-slate-400 font-mono">
-                              {viz.config.xAxisColumn} {viz.config.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
+                              {viz.config?.xAxisColumn || 'Category'} {viz.config?.yAxisColumn ? `• ${viz.config.yAxisColumn}` : ''}
                             </p>
                           </div>
                         </div>
@@ -2206,9 +2206,9 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
               </div>
               <div className="flex justify-between py-1 border-b border-[#252A36]">
                 <span className="text-slate-400">X-Axis / Category</span>
-                <span className="font-mono">{detailsViz.config.xAxisColumn}</span>
+                <span className="font-mono">{detailsViz.config?.xAxisColumn || 'Category'}</span>
               </div>
-              {detailsViz.config.yAxisColumn && (
+              {detailsViz.config?.yAxisColumn && (
                 <div className="flex justify-between py-1 border-b border-[#252A36]">
                   <span className="text-slate-400">Y-Axis / Metric</span>
                   <span className="font-mono">{detailsViz.config.yAxisColumn}</span>
@@ -2216,9 +2216,9 @@ export const CustomDashboardView: React.FC<CustomDashboardViewProps> = ({
               )}
               <div className="flex justify-between py-1 border-b border-[#252A36]">
                 <span className="text-slate-400">Aggregation</span>
-                <span className="font-mono uppercase">{detailsViz.config.aggregation || 'Sum'}</span>
+                <span className="font-mono uppercase">{detailsViz.config?.aggregation || 'Sum'}</span>
               </div>
-              {detailsViz.config.timeGranularity && (
+              {detailsViz.config?.timeGranularity && (
                 <div className="flex justify-between py-1 border-b border-[#252A36]">
                   <span className="text-slate-400">Time Granularity</span>
                   <span className="font-mono capitalize">{detailsViz.config.timeGranularity}</span>

@@ -484,11 +484,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             {executiveVisualizations.map((viz, index) => {
               const activeConfig = {
-                ...viz.config,
+                ...(viz.config || {}),
                 filters:
                   slicerColumn && slicerValue !== 'all'
                     ? [
-                        ...(viz.config.filters || []).filter(f => f.column !== slicerColumn),
+                        ...(viz.config?.filters || []).filter(f => f.column !== slicerColumn),
                         {
                           id: `slicer_${slicerColumn}`,
                           column: slicerColumn,
@@ -496,7 +496,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                           value: slicerValue
                         }
                       ]
-                    : viz.config.filters
+                    : (viz.config?.filters || [])
               };
 
               const computed = VisualizationEngine.compute(

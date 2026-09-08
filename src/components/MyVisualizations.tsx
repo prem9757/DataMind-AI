@@ -98,10 +98,12 @@ export const MyVisualizations: React.FC<MyVisualizationsProps> = ({
 
   const filteredVisualizations = useMemo(() => {
     return visualizations.filter(v => {
+      const xCol = v.config?.xAxisColumn || '';
+      const yCol = v.config?.yAxisColumn || '';
       const matchesQuery =
         v.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        v.config.xAxisColumn.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (v.config.yAxisColumn && v.config.yAxisColumn.toLowerCase().includes(searchQuery.toLowerCase()));
+        xCol.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (yCol && yCol.toLowerCase().includes(searchQuery.toLowerCase()));
       const matchesType = filterType === 'ALL' || v.chartType === filterType;
       return matchesQuery && matchesType;
     });
@@ -276,8 +278,8 @@ export const MyVisualizations: React.FC<MyVisualizationsProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-400 mt-0.5">
-                        {viz.config.xAxisColumn}
-                        {viz.config.yAxisColumn ? ` • ${viz.config.aggregation || 'sum'}(${viz.config.yAxisColumn})` : ''}
+                        {viz.config?.xAxisColumn || 'Custom Dimension'}
+                        {viz.config?.yAxisColumn ? ` • ${viz.config?.aggregation || 'sum'}(${viz.config.yAxisColumn})` : ''}
                       </p>
                     </div>
 
